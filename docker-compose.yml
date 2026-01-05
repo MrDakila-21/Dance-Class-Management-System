@@ -36,8 +36,8 @@ services:
       DB_HOST: db
       DB_PORT: 3306
       DB_NAME: dance_studio
-      DB_USER: root
-      DB_PASSWORD: rootpassword
+      DB_USER: danceuser
+      DB_PASSWORD: dancepass
     networks:
       - dance_network
 

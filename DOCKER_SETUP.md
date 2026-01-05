@@ -122,10 +122,10 @@ docker-compose up -d --build app
 
 ```bash
 # Connect to MySQL from host
-mysql -h 127.0.0.1 -u root -prootpassword dance_studio
+mysql -h 127.0.0.1 -u root -p dance_studio
 
 # Or use Docker exec
-docker-compose exec db mysql -u root -prootpassword dance_studio
+docker-compose exec db mysql -u root -p dance_studio
 ```
 
 ## Production Considerations

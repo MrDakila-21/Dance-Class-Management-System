@@ -3,9 +3,9 @@
 .gitignore
 .gitattributes
 
-# Documentation
-README.md
+# Documentation (keep README.md for reference)
 *.md
+!README.md
 
 # IDE and editor files
 .vscode
