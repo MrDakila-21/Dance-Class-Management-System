@@ -11,19 +11,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install all required R packages
-RUN R -e "install.packages(c(
-    'shiny',
-    'shinyjs',
-    'DBI',
-    'RSQLite',
-    'pool',
-    'dplyr',
-    'DT',
-    'qrcode',
-    'png',
-    'jsonlite',
-    'base64enc'
-), repos='https://cloud.r-project.org')"
+RUN R -e "install.packages(c('shiny','shinyjs','DBI','RSQLite','pool','dplyr','DT','qrcode','png','jsonlite','base64enc'), repos='https://cloud.r-project.org')"
 
 # Copy your app files to Shiny Server folder
 COPY . /srv/shiny-server/
