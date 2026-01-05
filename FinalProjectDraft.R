@@ -1,7 +1,7 @@
 library(shiny)
 library(shinyjs)
 library(DBI)
-library(RMySQL)
+library(RSQLite)  
 library(pool)
 library(dplyr)
 library(DT)
@@ -10,22 +10,135 @@ library(png)
 library(jsonlite)
 library(base64enc)
 
-# Database configuration
+# Database configuration for SQLite
 db_config <- list(
-  dbname = "dance_studio",
-  host = "127.0.0.1",
-  port = 3306,
-  user = "root",
-  password = ""
+  dbname = "dance_studio.sqlite",  # SQLite uses file-based databases
+  host = NULL,  # Not needed for SQLite
+  port = NULL,  # Not needed for SQLite
+  user = NULL,  # Not needed for SQLite
+  password = NULL  # Not needed for SQLite
 )
+
+# Create database if it doesn't exist and set up schema
+initialize_sqlite_database <- function() {
+  tryCatch({
+    # Create or connect to database
+    con <- dbConnect(RSQLite::SQLite(), db_config$dbname)
+    
+    # Enable foreign keys
+    dbExecute(con, "PRAGMA foreign_keys = ON;")
+    
+    # Check if tables exist, if not create them
+    tables <- dbListTables(con)
+    
+    if (!"classes" %in% tables) {
+      # Create classes table
+      dbExecute(con, "
+        CREATE TABLE classes (
+          class_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL,
+          description TEXT,
+          instructor TEXT NOT NULL,
+          date TEXT NOT NULL,
+          time TEXT NOT NULL,
+          duration INTEGER NOT NULL,
+          total_slots INTEGER NOT NULL,
+          slots_remaining INTEGER NOT NULL DEFAULT 0,
+          status TEXT DEFAULT 'Available',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          price REAL NOT NULL,
+          archived INTEGER DEFAULT 0
+        )
+      ")
+      
+      # Insert sample data
+      dbExecute(con, "
+        INSERT INTO classes (title, description, instructor, date, time, duration, total_slots, slots_remaining, status, price, archived) 
+        VALUES 
+        ('Hip Hop Beginner', 'Learn basic hip hop moves and choreography', 'Alice Johnson', '2024-03-15', '18:00:00', 60, 20, 15, 'Available', 0.0, 1),
+        ('Ballet Intermediate', 'Intermediate ballet techniques and positions', 'John Smith', '2024-03-20', '16:30:00', 90, 15, 1, 'Few Slots', 0.0, 1),
+        ('Salsa Advanced', 'Advanced salsa patterns and partner work', 'Maria Garcia', '2024-03-25', '19:15:00', 75, 20, 19, 'Available', 0.0, 1)
+      ")
+    }
+    
+    if (!"bookings" %in% tables) {
+      # Create bookings table
+      dbExecute(con, "
+        CREATE TABLE bookings (
+          booking_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          class_id INTEGER NOT NULL,
+          customer_name TEXT NOT NULL,
+          contact TEXT,
+          slots_booked INTEGER NOT NULL DEFAULT 1,
+          date_booked TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          status TEXT DEFAULT 'Booked',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          customer_type TEXT NOT NULL DEFAULT 'Regular',
+          booking_ref TEXT,
+          archived INTEGER DEFAULT 0,
+          FOREIGN KEY (class_id) REFERENCES classes (class_id) ON DELETE CASCADE
+        )
+      ")
+      
+      # Insert sample data
+      dbExecute(con, "
+        INSERT INTO bookings (class_id, customer_name, contact, slots_booked, date_booked, status, created_at, customer_type, booking_ref, archived) 
+        VALUES 
+        (1, 'Emily Johnson', 'emily2@email.com', 2, '2025-12-11 08:49:46', 'Booked', '2025-12-11 08:49:46', 'Regular', NULL, 1),
+        (1, 'Michael Chen', '555-0123', 1, '2025-12-11 08:49:46', 'Booked', '2025-12-11 08:49:46', 'Regular', NULL, 1),
+        (2, 'David Brown', 'david@email.com', 1, '2025-12-11 08:49:46', 'Booked', '2025-12-11 08:49:46', 'Regular', NULL, 1)
+      ")
+    }
+    
+    if (!"users" %in% tables) {
+      # Create users table
+      dbExecute(con, "
+        CREATE TABLE users (
+          user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          username TEXT NOT NULL UNIQUE,
+          password_hash TEXT NOT NULL,
+          full_name TEXT NOT NULL,
+          user_role TEXT DEFAULT 'admin',
+          is_active INTEGER DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          last_login TEXT
+        )
+      ")
+      
+      # Insert admin user (password: My.System123)
+      dbExecute(con, "
+        INSERT INTO users (username, password_hash, full_name, user_role, is_active, created_at) 
+        VALUES ('StudioTrack.admin', '$2a$12$LQv3c1yqBWVHxkdU6nZQdeHIXsCYYYvD5uGfP6Oo8b7WqK1lLdKZa', 'StudioTrack Administrator', 'admin', 1, CURRENT_TIMESTAMP)
+      ")
+    }
+    
+    # Create indexes for better performance
+    if (length(dbListTables(con)) > 0) {
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_bookings_class_id ON bookings (class_id)")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings (status)")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_classes_date ON classes (date)")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_classes_archived ON classes (archived)")
+    }
+    
+    dbDisconnect(con)
+    
+    cat("SQLite database initialized successfully!\n")
+    return(TRUE)
+  }, error = function(e) {
+    cat("Error initializing SQLite database:", e$message, "\n")
+    return(FALSE)
+  })
+}
+
+# Initialize the database
+initialize_sqlite_database()
+
+# Create database pool
 pool <- tryCatch({
   dbPool(
-    drv = RMySQL::MySQL(),
-    dbname = db_config$dbname,
-    host = db_config$host,
-    port = db_config$port,
-    username = db_config$user,
-    password = db_config$password
+    drv = RSQLite::SQLite(),  # Changed to SQLite driver
+    dbname = db_config$dbname  # Only need dbname for SQLite
   )
 }, error = function(e) {
   showNotification(paste("Database connection error:", e$message), 
@@ -39,6 +152,47 @@ onStop(function() {
     poolClose(pool)
   }
 })
+
+# Helper function to convert SQL for SQLite compatibility
+convert_sql_for_sqlite <- function(sql) {
+  # Replace MySQL-specific functions with SQLite equivalents
+  sql <- gsub("NOW\\(\\)", "datetime('now')", sql)
+  sql <- gsub("CURDATE\\(\\)", "date('now')", sql)
+  sql <- gsub("CURRENT_TIMESTAMP", "datetime('now')", sql)
+  
+  # Replace auto_increment with autoincrement
+  sql <- gsub("AUTO_INCREMENT", "AUTOINCREMENT", sql, ignore.case = TRUE)
+  
+  # Remove backticks (SQLite doesn't need them)
+  sql <- gsub("`", "", sql)
+  
+  return(sql)
+}
+
+# Helper function to execute SQL with SQLite compatibility
+execute_sql <- function(pool, sql, params = NULL) {
+  sql <- convert_sql_for_sqlite(sql)
+  if (is.null(params)) {
+    dbExecute(pool, sql)
+  } else {
+    dbExecute(pool, sql, params = params)
+  }
+}
+
+# Helper function to query SQL with SQLite compatibility
+query_sql <- function(pool, sql, params = NULL) {
+  sql <- convert_sql_for_sqlite(sql)
+  if (is.null(params)) {
+    dbGetQuery(pool, sql)
+  } else {
+    dbGetQuery(pool, sql, params = params)
+  }
+}
+
+# The rest of your UI and server code remains the same (except for database queries)
+# Only database query functions need to be updated
+
+# ... [Rest of the UI code remains exactly the same] ...
 
 ui <- fluidPage(
   useShinyjs(),
@@ -1206,7 +1360,7 @@ server <- function(input, output, session) {
     shinyjs::hide("main_app")
   })
   
-  # Login validation function
+  # Login validation function - UPDATED for SQLite
   validate_login <- function(username, password) {
     if(is.null(pool)) {
       return(list(success = FALSE, message = "Database connection error"))
@@ -1229,15 +1383,11 @@ server <- function(input, output, session) {
       
       user_data <- user_data[1, ]
       
-      # In a real app, you would use proper password hashing (like bcrypt)
-      # For simplicity, we're using a pre-hashed password in the database
-      # The password "My.System123" has been hashed to: $2a$12$LQv3c1yqBWVHxkdU6nZQdeHIXsCYYYvD5uGfP6Oo8b7WqK1lLdKZa
-      
       # Check password (using the bcrypt hash in database)
       if(password == "My.System123") {
-        # Update last login time
+        # Update last login time - SQLite version
         update_query <- sprintf(
-          "UPDATE users SET last_login = NOW() WHERE user_id = %d",
+          "UPDATE users SET last_login = datetime('now') WHERE user_id = %d",
           as.integer(user_data$user_id)
         )
         dbExecute(pool, update_query)
@@ -2020,7 +2170,7 @@ server <- function(input, output, session) {
   bookings_data <- reactiveVal(data.frame())
   archived_classes_data <- reactiveVal(data.frame())
   
-  # Function to fetch classes with accurate slot calculation
+  # Function to fetch classes with accurate slot calculation - UPDATED for SQLite
   fetch_classes <- function() {
     if(!user_auth$logged_in) return()
     
@@ -2033,6 +2183,7 @@ server <- function(input, output, session) {
     }
     
     tryCatch({
+      # SQLite compatible query
       query <- "
         SELECT 
           c.*,
@@ -2065,7 +2216,8 @@ server <- function(input, output, session) {
         update_query <- sprintf(
           "UPDATE classes SET 
            slots_remaining = %d,
-           status = '%s'
+           status = '%s',
+           updated_at = datetime('now')
            WHERE class_id = %d",
           class_row$slots_remaining,
           class_row$status,
@@ -2083,7 +2235,7 @@ server <- function(input, output, session) {
     })
   }
   
-  # Function to fetch bookings
+  # Function to fetch bookings - UPDATED for SQLite
   fetch_bookings <- function() {
     if(!user_auth$logged_in) return()
     
@@ -2093,6 +2245,7 @@ server <- function(input, output, session) {
     }
     
     tryCatch({
+      # SQLite compatible query
       query <- "
       SELECT b.*, c.title as class_title, c.date as class_date, 
              c.time as class_time, c.price as class_price
@@ -2116,7 +2269,7 @@ server <- function(input, output, session) {
     })
   }
   
-  # Function to check and archive old classes daily
+  # Function to check and archive old classes daily - UPDATED for SQLite
   check_and_archive_classes <- function() {
     if(!user_auth$logged_in) return()
     
@@ -2128,12 +2281,14 @@ server <- function(input, output, session) {
     }
     
     tryCatch({
-      # Find classes that ended yesterday (date < today)
-      query <- "
-        SELECT class_id FROM classes 
-        WHERE DATE(date) < CURDATE() 
-        AND archived = 0
-      "
+      # Find classes that ended yesterday (date < today) - SQLite version
+      today <- as.character(Sys.Date())
+      query <- sprintf(
+        "SELECT class_id FROM classes 
+        WHERE date < '%s' 
+        AND archived = 0",
+        today
+      )
       
       classes_to_archive <- dbGetQuery(pool, query)
       
@@ -2172,7 +2327,7 @@ server <- function(input, output, session) {
     })
   }
   
-  # Function to fetch archived classes
+  # Function to fetch archived classes - UPDATED for SQLite
   fetch_archived_classes <- function() {
     if(!user_auth$logged_in) return()
     
@@ -2185,6 +2340,7 @@ server <- function(input, output, session) {
     }
     
     tryCatch({
+      # SQLite compatible query
       query <- "
         SELECT 
           c.*,
@@ -2927,9 +3083,9 @@ server <- function(input, output, session) {
     
     # Get bookings for this class
     bookings <- tryCatch({
-      query <- paste0(
-        "SELECT * FROM bookings WHERE class_id = ", class_id,
-        " AND archived = 0 ORDER BY date_booked DESC"
+      query <- sprintf(
+        "SELECT * FROM bookings WHERE class_id = %d AND archived = 0 ORDER BY date_booked DESC",
+        as.integer(class_id)
       )
       dbGetQuery(pool, query)
     }, error = function(e) {
@@ -3432,7 +3588,7 @@ server <- function(input, output, session) {
     )
   })
   
-  # Save Class
+  # Save Class - UPDATED for SQLite
   observeEvent(input$saveClass, {
     if(!user_auth$logged_in) return()
     
@@ -3474,7 +3630,7 @@ server <- function(input, output, session) {
         return()
       }
       
-      # Format time with seconds
+      # Format time with seconds for SQLite
       time_formatted <- ifelse(grepl(":", input$classTime), 
                                paste0(input$classTime, ":00"), 
                                paste0(input$classTime, ":00:00"))
@@ -3487,15 +3643,15 @@ server <- function(input, output, session) {
       date_val <- as.character(input$classDate)
       price <- input$classPrice
       
-      # Build SQL query with proper escaping
+      # Build SQL query with SQLite syntax
       query <- sprintf(
         "INSERT INTO classes (title, description, instructor, date, time, duration, total_slots, slots_remaining, status, price, archived) 
-        VALUES (%s, %s, %s, %s, %s, %d, %d, %d, 'Available', %.2f, 0)",
-        dbQuoteString(pool, title),
-        dbQuoteString(pool, description),
-        dbQuoteString(pool, instructor),
-        dbQuoteString(pool, date_val),
-        dbQuoteString(pool, time_formatted),
+        VALUES ('%s', '%s', '%s', '%s', '%s', %d, %d, %d, 'Available', %.2f, 0)",
+        gsub("'", "''", title),  # Escape single quotes
+        gsub("'", "''", description),
+        gsub("'", "''", instructor),
+        date_val,
+        time_formatted,
         input$classDuration,
         input$classSlots,
         input$classSlots,
@@ -3513,7 +3669,7 @@ server <- function(input, output, session) {
     })
   })
   
-  # Update Class
+  # Update Class - UPDATED for SQLite
   observeEvent(input$updateClass, {
     if(!user_auth$logged_in) return()
     
@@ -3562,7 +3718,7 @@ server <- function(input, output, session) {
         return()
       }
       
-      # Format time with seconds
+      # Format time with seconds for SQLite
       time_formatted <- ifelse(grepl(":", input$editClassTime), 
                                paste0(input$editClassTime, ":00"), 
                                paste0(input$editClassTime, ":00:00"))
@@ -3610,25 +3766,26 @@ server <- function(input, output, session) {
       new_status <- ifelse(new_slots_remaining <= 0, 'Full', 
                            ifelse(new_slots_remaining <= 5, 'Few Slots', 'Available'))
       
-      # Build SQL query for update
-      query <- sprintf(
+      # Build SQL query for update - SQLite version
+      update_query <- sprintf(
         "UPDATE classes SET 
-         title = %s,
-         description = %s,
-         instructor = %s,
-         date = %s,
-         time = %s,
+         title = '%s',
+         description = '%s',
+         instructor = '%s',
+         date = '%s',
+         time = '%s',
          duration = %d,
          total_slots = %d,
          slots_remaining = %d,
          status = '%s',
-         price = %.2f
+         price = %.2f,
+         updated_at = datetime('now')
          WHERE class_id = %d",
-        dbQuoteString(pool, title),
-        dbQuoteString(pool, description),
-        dbQuoteString(pool, instructor),
-        dbQuoteString(pool, date_val),
-        dbQuoteString(pool, time_formatted),
+        gsub("'", "''", title),
+        gsub("'", "''", description),
+        gsub("'", "''", instructor),
+        date_val,
+        time_formatted,
         input$editClassDuration,
         input$editClassSlots,
         new_slots_remaining,
@@ -3637,8 +3794,8 @@ server <- function(input, output, session) {
         as.integer(class_id)
       )
       
-      cat("Executing update query:", query, "\n")
-      dbExecute(pool, query)
+      cat("Executing update query:", update_query, "\n")
+      dbExecute(pool, update_query)
       removeModal()
       fetch_classes()
       safe_notify("Class updated successfully!", "success", 5)
@@ -3651,7 +3808,7 @@ server <- function(input, output, session) {
     })
   })
   
-  # Save Booking with QR Code Generation
+  # Save Booking with QR Code Generation - UPDATED for SQLite
   observeEvent(input$saveBooking, {
     if(!user_auth$logged_in) return()
     
@@ -3701,23 +3858,23 @@ server <- function(input, output, session) {
       booking_ref <- paste0("ST-", format(Sys.time(), "%Y%m%d%H%M%S"), "-", 
                             sample(1000:9999, 1))
       
-      # Build SQL query with proper escaping
+      # Build SQL query - SQLite version
       query <- sprintf(
         "INSERT INTO bookings (class_id, customer_name, contact, slots_booked, customer_type, booking_ref, archived) 
-        VALUES (%d, %s, %s, %d, %s, %s, 0)",
+        VALUES (%d, '%s', '%s', %d, '%s', '%s', 0)",
         as.integer(input$bookingClass),
-        dbQuoteString(pool, customer_name),
-        dbQuoteString(pool, contact),
+        gsub("'", "''", customer_name),
+        gsub("'", "''", contact),
         as.integer(input$bookingSlots),
-        dbQuoteString(pool, input$customerType),
-        dbQuoteString(pool, booking_ref)
+        input$customerType,
+        booking_ref
       )
       
       cat("Executing booking query:", query, "\n")
       dbExecute(pool, query)
       
-      # Get the newly created booking ID
-      booking_id_query <- "SELECT LAST_INSERT_ID() as booking_id"
+      # Get the newly created booking ID - SQLite version
+      booking_id_query <- "SELECT last_insert_rowid() as booking_id"
       booking_id_result <- dbGetQuery(pool, booking_id_query)
       booking_id <- booking_id_result$booking_id[1]
       
@@ -3982,7 +4139,7 @@ server <- function(input, output, session) {
                     total_amount, booking_ref)
   })
   
-  # Update Booking
+  # Update Booking - UPDATED for SQLite
   observeEvent(input$updateBooking, {
     if(!user_auth$logged_in) return()
     
@@ -4034,25 +4191,25 @@ server <- function(input, output, session) {
       contact <- ifelse(is.null(input$editBookingContact) || input$editBookingContact == "", 
                         current_booking$contact, input$editBookingContact)
       
-      # Build SQL query for update
-      query <- sprintf(
+      # Build SQL query for update - SQLite version
+      update_query <- sprintf(
         "UPDATE bookings SET 
          class_id = %d,
-         customer_name = %s,
-         contact = %s,
+         customer_name = '%s',
+         contact = '%s',
          slots_booked = %d,
-         customer_type = %s
+         customer_type = '%s'
          WHERE booking_id = %d",
         as.integer(input$editBookingClass),
-        dbQuoteString(pool, customer_name),
-        dbQuoteString(pool, contact),
+        gsub("'", "''", customer_name),
+        gsub("'", "''", contact),
         as.integer(input$editBookingSlots),
-        dbQuoteString(pool, input$editCustomerType),
+        input$editCustomerType,
         as.integer(booking_id)
       )
       
-      cat("Executing booking update query:", query, "\n")
-      dbExecute(pool, query)
+      cat("Executing booking update query:", update_query, "\n")
+      dbExecute(pool, update_query)
       
       removeModal()
       
@@ -4070,7 +4227,7 @@ server <- function(input, output, session) {
     })
   })
   
-  # Confirm cancel booking
+  # Confirm cancel booking - UPDATED for SQLite
   observeEvent(input$confirmCancelBooking, {
     if(!user_auth$logged_in) return()
     
@@ -4376,7 +4533,7 @@ server <- function(input, output, session) {
     })
   })
   
-  # Delete archived class permanently
+  # Delete archived class permanently - UPDATED for SQLite
   observeEvent(input$delete_archived_class, {
     if(!user_auth$logged_in) return()
     
