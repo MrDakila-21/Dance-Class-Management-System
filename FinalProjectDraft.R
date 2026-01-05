@@ -11,12 +11,13 @@ library(jsonlite)
 library(base64enc)
 
 # Database configuration
+# Support both local and Docker environments
 db_config <- list(
-  dbname = "dance_studio",
-  host = "127.0.0.1",
-  port = 3306,
-  user = "root",
-  password = ""
+  dbname = Sys.getenv("DB_NAME", "dance_studio"),
+  host = Sys.getenv("DB_HOST", "127.0.0.1"),
+  port = as.integer(Sys.getenv("DB_PORT", "3306")),
+  user = Sys.getenv("DB_USER", "root"),
+  password = Sys.getenv("DB_PASSWORD", "")
 )
 pool <- tryCatch({
   dbPool(
