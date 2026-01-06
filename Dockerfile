@@ -16,8 +16,8 @@ RUN R -e "install.packages(c('shiny','shinyjs','DBI','RSQLite','pool','dplyr','D
 # Copy your app files to Shiny Server folder
 COPY . /srv/shiny-server/
 
-# Give proper permissions
-RUN chmod -R 755 /srv/shiny-server
+# Ensure Shiny user owns the app directory and files
+RUN chown -R shiny:shiny /srv/shiny-server
 
 # Expose Shiny port
 EXPOSE 3838
