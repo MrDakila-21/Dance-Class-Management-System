@@ -1390,68 +1390,68 @@ server <- function(input, output, session) {
   archived_classes_data <- reactiveVal(data.frame())
   
   # Function to fetch classes with accurate slot calculation 
-  fetch_classes <- function() {
-    if(!user_auth$logged_in) return()
+fetch_classes <- function() {
+  if(!user_auth$logged_in) return()
+  
+  cat("Fetching classes...\n")
+  
+  if(is.null(pool)) {
+    cat("Pool is NULL\n")
+    safe_notify("No database connection", "error", 5)
+    return()
+  }
+  
+  tryCatch({
+    query <- "
+      SELECT 
+        c.*,
+        COALESCE(SUM(CASE WHEN b.status IN ('Booked', 'Attended') THEN b.slots_booked ELSE 0 END), 0) as occupied_slots,
+        c.total_slots - COALESCE(SUM(CASE WHEN b.status IN ('Booked', 'Attended') THEN b.slots_booked ELSE 0 END), 0) as calculated_slots_remaining
+      FROM classes c
+      LEFT JOIN bookings b ON c.class_id = b.class_id AND b.archived = 0
+      WHERE c.archived = 0
+      GROUP BY c.class_id
+      ORDER BY c.date, c.time
+    "
     
-    cat("Fetching classes...\n")
+    data <- dbGetQuery(pool, query)
     
-    if(is.null(pool)) {
-      cat("Pool is NULL\n")
-      safe_notify("No database connection", "error", 5)
-      return()
+    # Update the slots_remaining with accurate calculation
+    data <- data %>%
+      mutate(
+        slots_remaining = calculated_slots_remaining,
+        status = case_when(
+          calculated_slots_remaining <= 0 ~ 'Full',
+          calculated_slots_remaining <= 5 ~ 'Few Slots',
+          TRUE ~ 'Available'
+        )
+      ) %>%
+      select(-occupied_slots, -calculated_slots_remaining)
+    
+    # Update classes table with accurate slots
+    for(i in 1:nrow(data)) {
+      class_row <- data[i, ]
+      update_query <- sprintf(
+        "UPDATE classes SET 
+         slots_remaining = %d,
+         status = '%s',
+         updated_at = datetime('now')
+         WHERE class_id = %d",
+        class_row$slots_remaining,
+        class_row$status,
+        as.integer(class_row$class_id)
+      )
+      dbExecute(pool, update_query)
     }
     
-    tryCatch({
-      query <- "
-        SELECT 
-          c.*,
-          COALESCE(SUM(CASE WHEN b.status = 'Booked' THEN b.slots_booked ELSE 0 END), 0) as booked_slots,
-          c.total_slots - COALESCE(SUM(CASE WHEN b.status = 'Booked' THEN b.slots_booked ELSE 0 END), 0) as calculated_slots_remaining
-        FROM classes c
-        LEFT JOIN bookings b ON c.class_id = b.class_id AND b.archived = 0
-        WHERE c.archived = 0
-        GROUP BY c.class_id
-        ORDER BY c.date, c.time
-      "
-      
-      data <- dbGetQuery(pool, query)
-      
-      # Update the slots_remaining with accurate calculation
-      data <- data %>%
-        mutate(
-          slots_remaining = calculated_slots_remaining,
-          status = case_when(
-            calculated_slots_remaining <= 0 ~ 'Full',
-            calculated_slots_remaining <= 5 ~ 'Few Slots',
-            TRUE ~ 'Available'
-          )
-        ) %>%
-        select(-booked_slots, -calculated_slots_remaining)
-      
-      # Update classes table with accurate slots
-      for(i in 1:nrow(data)) {
-        class_row <- data[i, ]
-        update_query <- sprintf(
-          "UPDATE classes SET 
-           slots_remaining = %d,
-           status = '%s',
-           updated_at = datetime('now')
-           WHERE class_id = %d",
-          class_row$slots_remaining,
-          class_row$status,
-          as.integer(class_row$class_id)
-        )
-        dbExecute(pool, update_query)
-      }
-      
-      cat("Fetched", nrow(data), "rows\n")
-      classes_data(data)
-    }, error = function(e) {
-      cat("Error in fetch_classes:", e$message, "\n")
-      safe_notify(paste("Error fetching classes:", toString(e$message)), "error", 5)
-      classes_data(data.frame())
-    })
-  }
+    cat("Fetched", nrow(data), "rows\n")
+    classes_data(data)
+  }, error = function(e) {
+    cat("Error in fetch_classes:", e$message, "\n")
+    safe_notify(paste("Error fetching classes:", toString(e$message)), "error", 5)
+    classes_data(data.frame())
+  })
+}
   
   # Function to fetch bookings 
   fetch_bookings <- function() {
@@ -4597,3 +4597,4 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
+
