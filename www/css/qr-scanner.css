@@ -1,0 +1,93 @@
+/* QR Code Modal */
+.qr-modal { text-align: center; }
+.qr-container {
+    background: white; padding: 30px; border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08); margin: 20px 0; display: inline-block;
+}
+.qr-image {
+    border: 2px solid #e2e8f0; border-radius: 12px; padding: 10px;
+    background: white; margin-bottom: 20px;
+}
+.qr-info {
+    text-align: left; background: #f8fafc; padding: 20px;
+    border-radius: 12px; margin-top: 20px;
+}
+.qr-info-item { margin-bottom: 10px; display: flex; justify-content: space-between; }
+.qr-info-label { font-weight: 600; color: #475569; font-size: 14px; }
+.qr-info-value { color: #1e293b; font-weight: 500; font-size: 14px; }
+
+.qr-actions { display: flex; gap: 15px; justify-content: center; margin-top: 25px; }
+.btn-download { background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 12px 24px; }
+.btn-download:hover { box-shadow: 0 6px 20px rgba(16,185,129,0.3); }
+.btn-print { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 12px 24px; }
+.btn-print:hover { box-shadow: 0 6px 20px rgba(99,102,241,0.3); }
+
+.qr-success-message {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white; padding: 15px; border-radius: 12px; margin-bottom: 20px;
+    display: flex; align-items: center; gap: 10px; font-weight: 600;
+}
+.qr-badge {
+    background: rgba(16,185,129,0.1); color: #059669; padding: 4px 10px;
+    border-radius: 20px; font-size: 12px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 5px; margin-left: 10px;
+}
+.qr-action-cell { display: flex; gap: 5px; justify-content: center; }
+
+.qr-instructions {
+    background: #fef3c7; padding: 15px; border-radius: 12px;
+    margin-top: 20px; text-align: left;
+}
+
+/* QR Scanner */
+.qr-scanner-container {
+    background: #f8fafc; padding: 30px; border-radius: 16px;
+    text-align: center; margin-bottom: 20px;
+}
+.scanner-video-container {
+    position: relative; width: 100%; max-width: 500px; margin: 0 auto 20px;
+}
+#qr-reader {
+    width: 100%; border: 2px solid #6366f1; border-radius: 12px;
+    background: #1e293b; min-height: 300px;
+}
+.scanner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+.scanner-frame {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 70%; height: 70%; border: 3px solid #10b981; border-radius: 8px;
+    box-shadow: 0 0 0 1000px rgba(0,0,0,0.5);
+}
+.scanner-controls { display: flex; justify-content: center; gap: 15px; margin-top: 20px; }
+
+/* Scanner Buttons */
+.btn-start { background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 12px 24px; }
+.btn-start:hover { box-shadow: 0 6px 20px rgba(16,185,129,0.3); }
+.btn-stop { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 12px 24px; }
+.btn-stop:hover { box-shadow: 0 6px 20px rgba(239,68,68,0.3); }
+.btn-switch { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 12px 24px; }
+.btn-switch:hover { box-shadow: 0 6px 20px rgba(99,102,241,0.3); }
+.btn-scan { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 12px 24px; margin-top: 15px; }
+.btn-scan:hover { box-shadow: 0 6px 20px rgba(99,102,241,0.3); }
+
+.scanner-status {
+    margin-top: 15px; padding: 10px; border-radius: 8px;
+    background: #f1f5f9; font-size: 14px;
+}
+.scanner-result {
+    background: white; padding: 20px; border-radius: 12px;
+    margin-top: 20px; border: 2px solid #e2e8f0; text-align: left;
+}
+.scanner-success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white; padding: 15px; border-radius: 12px; margin-bottom: 20px;
+    display: flex; align-items: center; gap: 10px; font-weight: 600;
+}
+.scanner-error {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white; padding: 15px; border-radius: 12px; margin-bottom: 20px;
+    display: flex; align-items: center; gap: 10px; font-weight: 600;
+}
+.captured-image {
+    max-width: 300px; margin: 20px auto; display: none;
+    border: 2px solid #e2e8f0; border-radius: 8px;
+}
