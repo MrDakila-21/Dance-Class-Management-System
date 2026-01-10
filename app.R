@@ -12,11 +12,11 @@ library(base64enc)
 
 # Database configuration for SQLite
 db_config <- list(
-  dbname = "dance_studio.sqlite",  # SQLite uses file-based databases
-  host = NULL,  # Not needed for SQLite
-  port = NULL,  # Not needed for SQLite
-  user = NULL,  # Not needed for SQLite
-  password = NULL  # Not needed for SQLite
+  dbname = "dance_studio.sqlite",  
+  host = NULL,  
+  port = NULL,  
+  user = NULL, 
+  password = NULL 
 )
 
 # Create database if it doesn't exist and set up schema
@@ -189,802 +189,21 @@ query_sql <- function(pool, sql, params = NULL) {
   }
 }
 
-# The rest of your UI and server code remains the same (except for database queries)
-# Only database query functions need to be updated
-
-# ... [Rest of the UI code remains exactly the same] ...
-
 ui <- fluidPage(
   useShinyjs(),
   tags$head(
-    tags$script(src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"),
-    tags$script(HTML('
-      // HTML5 QR Code Scanner Implementation
-      let html5QrCode = null;
-      let currentCameraId = null;
-      let cameraList = [];
-
-      // Initialize camera list
-      async function initializeCameras() {
-          try {
-              const devices = await Html5Qrcode.getCameras();
-              cameraList = devices;
-              console.log("Cameras found:", devices.length);
-              return devices;
-          } catch (error) {
-              console.error("Camera initialization error:", error);
-              updateScannerStatus("Camera access error: " + error, "error");
-              return [];
-          }
-      }
-
-      // Start QR Scanner
-      async function startQrScanner() {
-          // Stop if already running
-          if (html5QrCode && html5QrCode.isScanning) {
-              console.log("Scanner already running");
-              return;
-          }
-          
-          // Initialize cameras
-          const cameras = await initializeCameras();
-          if (cameras.length === 0) {
-              updateScannerStatus("No cameras found on this device", "error");
-              return;
-          }
-          
-          // Select camera (prefer rear/back camera)
-          let selectedCameraId = null;
-          const backCamera = cameras.find(cam => 
-              cam.label.toLowerCase().includes("back") || 
-              cam.label.toLowerCase().includes("rear")
-          );
-          
-          if (backCamera) {
-              selectedCameraId = backCamera.id;
-          } else {
-              selectedCameraId = cameras[0].id;
-          }
-          
-          currentCameraId = selectedCameraId;
-          const selectedCamera = cameras.find(c => c.id === selectedCameraId);
-          
-          // Initialize scanner
-          html5QrCode = new Html5Qrcode("qr-reader");
-          
-          // Configure scanner
-          const config = {
-              fps: 10,
-              qrbox: { width: 250, height: 250 },
-              rememberLastUsedCamera: true,
-              supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA]
-          };
-          
-          // Success callback
-          const onScanSuccess = (decodedText, decodedResult) => {
-              console.log("QR Code scanned successfully:", decodedText);
-              
-              // Stop scanner temporarily
-              html5QrCode.stop();
-              
-              // Show result
-              Shiny.setInputValue("qr_scanned_content", decodedText);
-              updateScannerStatus("QR Code detected!", "success");
-              
-              // Display result
-              $("#scan-result").show();
-              $("#qr_result_text").text(decodedText);
-              
-              // Resume scanning after 3 seconds
-              setTimeout(() => {
-                  if (html5QrCode && !html5QrCode.isScanning) {
-                      html5QrCode.resume();
-                      updateScannerStatus("Scanner resumed - ready for next scan", "success");
-                      $("#scan-result").hide();
-                  }
-              }, 3000);
-          };
-          
-          // Error callback (ignore when intentionally stopping)
-          const onScanError = (errorMessage) => {
-              // Don\'t show error if scanner was intentionally stopped
-              if (!errorMessage.includes("NotFoundException") && 
-                  !errorMessage.includes("NotAllowedError")) {
-                  console.log("Scan error:", errorMessage);
-              }
-          };
-          
-          // Start scanning
-          try {
-              await html5QrCode.start(
-                  selectedCameraId,
-                  config,
-                  onScanSuccess,
-                  onScanError
-              );
-              
-              updateScannerStatus("Scanner active - Using: " + 
-                  (selectedCamera ? selectedCamera.label : "Default Camera"), "success");
-              Shiny.setInputValue("scanner_active", "true");
-              
-          } catch (error) {
-              console.error("Failed to start scanner:", error);
-              updateScannerStatus("Failed to start camera: " + error.message, "error");
-              html5QrCode = null;
-          }
-      }
-
-      // Stop QR Scanner
-      function stopQrScanner() {
-          if (html5QrCode && html5QrCode.isScanning) {
-              html5QrCode.stop()
-                  .then(() => {
-                      updateScannerStatus("Scanner stopped", "info");
-                      Shiny.setInputValue("scanner_active", "false");
-                      html5QrCode = null;
-                  })
-                  .catch((err) => {
-                      console.error("Error stopping scanner:", err);
-                  });
-          } else {
-              updateScannerStatus("Scanner not running", "info");
-          }
-      }
-
-      // Switch between cameras
-      async function switchCamera() {
-          if (!html5QrCode || !html5QrCode.isScanning) {
-              updateScannerStatus("Start scanner first to switch cameras", "warning");
-              return;
-          }
-          
-          const cameras = cameraList.length > 0 ? cameraList : await initializeCameras();
-          
-          if (cameras.length < 2) {
-              updateScannerStatus("Only one camera available", "warning");
-              return;
-          }
-          
-          // Find current camera index
-          let currentIndex = cameras.findIndex(cam => cam.id === currentCameraId);
-          if (currentIndex === -1) currentIndex = 0;
-          
-          // Calculate next camera
-          const nextIndex = (currentIndex + 1) % cameras.length;
-          const nextCamera = cameras[nextIndex];
-          
-          // Stop current scanner
-          await html5QrCode.stop();
-          
-          // Update current camera
-          currentCameraId = nextCamera.id;
-          
-          // Restart with new camera
-          const config = {
-              fps: 10,
-              qrbox: { width: 250, height: 250 },
-              rememberLastUsedCamera: true
-          };
-          
-          try {
-              await html5QrCode.start(
-                  currentCameraId,
-                  config,
-                  (decodedText) => {
-                      console.log("QR Code scanned:", decodedText);
-                      html5QrCode.stop();
-                      Shiny.setInputValue("qr_scanned_content", decodedText);
-                      updateScannerStatus("QR Code detected!", "success");
-                  },
-                  () => {} // Empty error callback
-              );
-              
-              updateScannerStatus("Switched to: " + nextCamera.label, "success");
-          } catch (error) {
-              updateScannerStatus("Error switching camera: " + error.message, "error");
-          }
-      }
-
-      // Update scanner status display
-      function updateScannerStatus(message, type) {
-          const statusElement = document.getElementById("scanner-status");
-          const colors = {
-              success: "#16a34a",
-              error: "#dc2626",
-              warning: "#d97706",
-              info: "#64748b"
-          };
-          
-          const icons = {
-              success: "fa-check-circle",
-              error: "fa-times-circle",
-              warning: "fa-exclamation-circle",
-              info: "fa-info-circle"
-          };
-          
-          const color = colors[type] || "#64748b";
-          const icon = icons[type] || "fa-info-circle";
-          
-          statusElement.innerHTML = 
-              `<span style="color: ${color};">
-                  <i class="fas ${icon}"></i> ${message}
-              </span>`;
-      }
-
-      // Initialize on page load
-      $(document).on("shiny:connected", function() {
-          console.log("QR Scanner module loaded");
-          initializeCameras();
-      });
-    ')),
-    tags$style(HTML('
-/* Login Page Styles */
-.login-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 20px;
-}
-
-.login-card {
-  background: white;
-  border-radius: 20px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-  width: 100%;
-  max-width: 420px;
-  padding: 40px;
-  animation: fadeIn 0.5s ease-out;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.login-header {
-  text-align: center;
-  margin-bottom: 40px;
-}
-
-.login-logo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 15px;
-  margin-bottom: 20px;
-}
-
-.login-logo-icon {
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  width: 60px;
-  height: 60px;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: 28px;
-}
-
-.login-title {
-  font-size: 32px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0;
-  line-height: 1.2;
-}
-
-.login-subtitle {
-  font-size: 16px;
-  color: #64748b;
-  margin: 10px 0 0 0;
-}
-
-.login-form {
-  margin-bottom: 30px;
-}
-
-.form-group {
-  margin-bottom: 25px;
-}
-
-.form-label {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  color: #475569;
-  margin-bottom: 8px;
-}
-
-.form-input {
-  width: 100%;
-  padding: 14px 18px;
-  border: 2px solid #e2e8f0;
-  border-radius: 12px;
-  font-size: 16px;
-  color: #1e293b;
-  background: white;
-  transition: all 0.3s ease;
-}
-
-.form-input:focus {
-  outline: none;
-  border-color: #6366f1;
-  box-shadow: 0 0 0 4px rgba(99,102,241,0.1);
-}
-
-.form-input.error {
-  border-color: #ef4444;
-}
-
-.error-message {
-  color: #ef4444;
-  font-size: 13px;
-  margin-top: 6px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.login-button {
-  width: 100%;
-  padding: 16px;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  color: white;
-  border: none;
-  border-radius: 12px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-}
-
-.login-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 25px rgba(99,102,241,0.3);
-}
-
-.login-button:disabled {
-  background: #cbd5e1;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-
-.login-footer {
-  text-align: center;
-  margin-top: 30px;
-  padding-top: 20px;
-  border-top: 1px solid #e2e8f0;
-}
-
-.login-footer p {
-  color: #64748b;
-  font-size: 14px;
-  margin: 0;
-}
-
-.login-footer strong {
-  color: #1e293b;
-}
-
-/* Main App Styles (Only shown after login) */
-.main-app {
-  display: none;
-}
-
-/* Reset and Base Styles */
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-/* Navigation */
-.top-nav {
-    background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-    padding: 0 30px; height: 70px; display: flex; align-items: center;
-    justify-content: space-between; position: fixed; top: 0;
-    left: 0; right: 0; z-index: 1000;
-}
-.nav-brand { display: flex; align-items: center; gap: 12px; }
-.nav-brand i { color: #6366f1; font-size: 24px; }
-.nav-brand h1 { font-size: 24px; font-weight: 700; color: #1e293b; margin: 0; }
-
-.nav-tabs {
-    display: flex; gap: 2px; background: #f1f5f9;
-    border-radius: 10px; padding: 4px;
-}
-.nav-tab {
-    padding: 12px 24px; border: none; background: transparent;
-    color: #64748b; font-weight: 600; font-size: 15px; border-radius: 8px;
-    cursor: pointer; transition: all 0.3s ease; display: flex;
-    align-items: center; gap: 8px;
-}
-.nav-tab:hover { color: #475569; background: rgba(255,255,255,0.8); }
-.nav-tab.active { background: white; color: #6366f1; box-shadow: 0 2px 8px rgba(99,102,241,0.15); }
-
-.nav-actions { display: flex; align-items: center; gap: 15px; }
-.user-profile {
-    display: flex; align-items: center; gap: 10px; padding: 8px 16px;
-    background: #f8fafc; border-radius: 8px; cursor: pointer;
-}
-.user-avatar {
-    width: 36px; height: 36px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    border-radius: 50%; display: flex; align-items: center;
-    justify-content: center; color: white; font-weight: 600;
-}
-
-/* Main Content */
-.main-content { margin-top: 90px; padding: 30px; }
-
-/* Dashboard Header */
-.dashboard-header { margin-bottom: 30px; }
-.dashboard-title { font-size: 32px; font-weight: 700; color: #1e293b; margin: 0 0 10px 0; }
-.dashboard-subtitle { color: #64748b; font-size: 16px; margin: 0; }
-
-/* Stats Cards */
-.stats-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 20px; margin-bottom: 40px;
-}
-.stat-card {
-    background: white; border-radius: 16px; padding: 25px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.04); border: 1px solid #f1f5f9;
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-.stat-card:hover { transform: translateY(-5px); box-shadow: 0 8px 30px rgba(0,0,0,0.08); }
-
-.stat-icon {
-    width: 50px; height: 50px; border-radius: 12px;
-    display: flex; align-items: center; justify-content: center;
-    margin-bottom: 20px; font-size: 22px;
-}
-.stat-icon.classes { background: rgba(99,102,241,0.1); color: #6366f1; }
-.stat-icon.bookings { background: rgba(34,197,94,0.1); color: #16a34a; }
-.stat-icon.slots { background: rgba(245,158,11,0.1); color: #d97706; }
-.stat-icon.revenue { background: rgba(239,68,68,0.1); color: #dc2626; }
-
-.stat-content { display: flex; justify-content: space-between; align-items: flex-end; }
-.stat-numbers { display: flex; flex-direction: column; gap: 5px; }
-.stat-value { font-size: 32px; font-weight: 700; color: #1e293b; line-height: 1; }
-.stat-label { font-size: 14px; color: #64748b; font-weight: 500; }
-
-/* Table Cards */
-.table-card {
-    background: white; border-radius: 16px; padding: 30px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.04); border: 1px solid #f1f5f9;
-    margin-bottom: 30px;
-}
-.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
-.card-title {
-    font-size: 20px; font-weight: 700; color: #1e293b; margin: 0;
-    display: flex; align-items: center; gap: 10px;
-}
-.card-title i { color: #6366f1; }
-.action-buttons { display: flex; gap: 10px; }
-
-/* Buttons */
-.btn-primary, .btn-danger, .btn-warning, .btn-view, .btn-edit, .btn-delete,
-.btn-qr, .btn-attend, .btn-start, .btn-stop, .btn-switch, .btn-scan,
-.btn-download, .btn-print {
-    color: white; border: none; border-radius: 10px; font-weight: 600;
-    font-size: 14px; cursor: pointer; transition: all 0.3s ease;
-    display: inline-flex; align-items: center; gap: 8px;
-}
-.btn-primary:hover, .btn-danger:hover, .btn-warning:hover,
-.btn-view:hover, .btn-edit:hover, .btn-delete:hover,
-.btn-qr:hover, .btn-attend:hover, .btn-start:hover,
-.btn-stop:hover, .btn-switch:hover, .btn-scan:hover,
-.btn-download:hover, .btn-print:hover {
-    transform: translateY(-2px);
-}
-
-.btn-primary { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 10px 20px; }
-.btn-primary:hover { box-shadow: 0 6px 20px rgba(99,102,241,0.3); }
-.btn-danger { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 10px 20px; }
-.btn-danger:hover { box-shadow: 0 6px 20px rgba(239,68,68,0.3); }
-.btn-warning { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 10px 20px; }
-.btn-warning:hover { box-shadow: 0 6px 20px rgba(245,158,11,0.3); }
-.btn-view { background: #6366f1; padding: 10px; border-radius: 8px; flex: 1; }
-.btn-view:hover { background: #4f46e5; }
-.btn-edit { background: #f59e0b; padding: 10px; border-radius: 8px; flex: 1; }
-.btn-edit:hover { background: #d97706; }
-.btn-delete { background: #ef4444; padding: 10px; border-radius: 8px; flex: 1; }
-.btn-delete:hover { background: #dc2626; }
-.btn-qr { background: #10b981; padding: 6px 12px; border-radius: 6px; font-size: 12px; }
-.btn-qr:hover { background: #059669; }
-.btn-attend { background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 6px 12px; border-radius: 6px; font-size: 12px; }
-.btn-attend:hover { background: #059669; }
-
-/* Status Badges */
-.status-badge {
-    padding: 6px 12px; border-radius: 20px; font-size: 12px;
-    font-weight: 600; display: inline-block;
-}
-.status-available { background: rgba(34,197,94,0.1); color: #16a34a; }
-.status-few { background: rgba(245,158,11,0.1); color: #d97706; }
-.status-full { background: rgba(239,68,68,0.1); color: #dc2626; }
-.status-booked { background: rgba(99,102,241,0.1); color: #6366f1; }
-.status-cancelled { background: rgba(100,116,139,0.1); color: #64748b; }
-.status-regular { background: rgba(99,102,241,0.1); color: #6366f1; }
-.status-member { background: rgba(34,197,94,0.1); color: #16a34b; }
-.status-attended { background: rgba(16,185,129,0.1); color: #059669; }
-.status-today {
-    background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
-    color: white; font-size: 11px; padding: 3px 8px; border-radius: 12px;
-    display: inline-flex; align-items: center; gap: 4px; margin-left: 5px;
-}
-
-/* Filter Controls */
-.filter-controls {
-    display: flex; align-items: center; gap: 15px; margin-bottom: 25px;
-    background: #f8fafc; padding: 15px 20px; border-radius: 12px;
-}
-.filter-label { font-weight: 600; color: #475569; font-size: 14px; white-space: nowrap; }
-.filter-select { flex: 1; }
-.filter-select select {
-    padding: 8px 16px; border: 2px solid #e2e8f0; border-radius: 8px;
-    font-size: 14px; color: #475569; background: white; cursor: pointer;
-    transition: border-color 0.3s ease; min-width: 200px; width: 100%;
-}
-.filter-select select:focus {
-    outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
-}
-.filter-reset {
-    padding: 8px 16px; border: 2px solid #e2e8f0; border-radius: 8px;
-    background: white; color: #64748b; font-weight: 600; font-size: 14px;
-    cursor: pointer; transition: all 0.3s ease;
-}
-.filter-reset:hover { background: #f1f5f9; color: #475569; }
-
-/* Today Stats */
-.today-stats {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    color: white; padding: 15px 25px; border-radius: 16px;
-    margin-bottom: 25px; display: flex; justify-content: space-between;
-    align-items: center;
-}
-.today-stats-title { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; }
-.today-stats-value { font-size: 28px; font-weight: 700; }
-
-/* Empty State */
-.empty-state {
-    text-align: center; padding: 60px 20px; color: #64748b;
-}
-.empty-state i { font-size: 48px; color: #cbd5e1; margin-bottom: 20px; }
-.empty-state h3 { font-size: 18px; font-weight: 600; margin-bottom: 10px; }
-.empty-state p { font-size: 14px; margin-bottom: 20px; }
-
-/* Class Cards Grid */
-.classes-grid {
-    display: grid; grid-template-columns: repeat(3, 1fr);
-    gap: 25px; margin-top: 25px;
-}
-@media (max-width: 1200px) { .classes-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 768px) { .classes-grid { grid-template-columns: 1fr; } }
-
-.class-card {
-    background: white; border-radius: 16px; padding: 25px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.04); border: 1px solid #f1f5f9;
-    transition: all 0.3s ease; cursor: pointer; position: relative; overflow: hidden;
-}
-.class-card:hover { transform: translateY(-5px); box-shadow: 0 8px 30px rgba(0,0,0,0.1); border-color: #6366f1; }
-
-.class-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.class-card-title { font-size: 18px; font-weight: 700; color: #1e293b; margin: 0; line-height: 1.3; flex: 1; }
-.class-status-container { display: flex; align-items: center; gap: 8px; }
-.class-status {
-    font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px;
-    display: inline-block; white-space: nowrap;
-}
-.status-available-bg { background: rgba(34,197,94,0.1); color: #16a34a; }
-.status-few-bg { background: rgba(245,158,11,0.1); color: #d97706; }
-.status-full-bg { background: rgba(239,68,68,0.1); color: #dc2626; }
-
-.class-details { margin-bottom: 25px; }
-.class-detail-item {
-    display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
-    font-size: 14px; color: #475569;
-}
-.class-detail-item i { width: 20px; color: #6366f1; }
-
-.class-slots {
-    display: flex; align-items: center; justify-content: space-between;
-    background: #f8fafc; padding: 15px; border-radius: 12px; margin-bottom: 20px;
-}
-.slots-info { display: flex; flex-direction: column; gap: 5px; }
-.slots-label { font-size: 12px; color: #64748b; font-weight: 500; }
-.slots-value { font-size: 24px; font-weight: 700; color: #1e293b; }
-
-.slots-progress {
-    width: 60px; height: 60px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 700; font-size: 14px;
-}
-.progress-available { background: rgba(34,197,94,0.1); color: #16a34a; }
-.progress-few { background: rgba(245,158,11,0.1); color: #d97706; }
-.progress-full { background: rgba(239,68,68,0.1); color: #dc2626; }
-
-.class-actions { display: flex; gap: 10px; }
-
-/* QR Code Modal */
-.qr-modal { text-align: center; }
-.qr-container {
-    background: white; padding: 30px; border-radius: 16px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.08); margin: 20px 0; display: inline-block;
-}
-.qr-image {
-    border: 2px solid #e2e8f0; border-radius: 12px; padding: 10px;
-    background: white; margin-bottom: 20px;
-}
-.qr-info {
-    text-align: left; background: #f8fafc; padding: 20px;
-    border-radius: 12px; margin-top: 20px;
-}
-.qr-info-item { margin-bottom: 10px; display: flex; justify-content: space-between; }
-.qr-info-label { font-weight: 600; color: #475569; font-size: 14px; }
-.qr-info-value { color: #1e293b; font-weight: 500; font-size: 14px; }
-
-.qr-actions { display: flex; gap: 15px; justify-content: center; margin-top: 25px; }
-.btn-download { background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 12px 24px; }
-.btn-download:hover { box-shadow: 0 6px 20px rgba(16,185,129,0.3); }
-.btn-print { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 12px 24px; }
-.btn-print:hover { box-shadow: 0 6px 20px rgba(99,102,241,0.3); }
-
-.qr-success-message {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white; padding: 15px; border-radius: 12px; margin-bottom: 20px;
-    display: flex; align-items: center; gap: 10px; font-weight: 600;
-}
-.qr-badge {
-    background: rgba(16,185,129,0.1); color: #059669; padding: 4px 10px;
-    border-radius: 20px; font-size: 12px; font-weight: 600;
-    display: inline-flex; align-items: center; gap: 5px; margin-left: 10px;
-}
-.qr-action-cell { display: flex; gap: 5px; justify-content: center; }
-
-.qr-instructions {
-    background: #fef3c7; padding: 15px; border-radius: 12px;
-    margin-top: 20px; text-align: left;
-}
-
-/* QR Scanner */
-.qr-scanner-container {
-    background: #f8fafc; padding: 30px; border-radius: 16px;
-    text-align: center; margin-bottom: 20px;
-}
-.scanner-video-container {
-    position: relative; width: 100%; max-width: 500px; margin: 0 auto 20px;
-}
-#qr-reader {
-    width: 100%; border: 2px solid #6366f1; border-radius: 12px;
-    background: #1e293b; min-height: 300px;
-}
-.scanner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-.scanner-frame {
-    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    width: 70%; height: 70%; border: 3px solid #10b981; border-radius: 8px;
-    box-shadow: 0 0 0 1000px rgba(0,0,0,0.5);
-}
-.scanner-controls { display: flex; justify-content: center; gap: 15px; margin-top: 20px; }
-
-/* Scanner Buttons */
-.btn-start { background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 12px 24px; }
-.btn-start:hover { box-shadow: 0 6px 20px rgba(16,185,129,0.3); }
-.btn-stop { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 12px 24px; }
-.btn-stop:hover { box-shadow: 0 6px 20px rgba(239,68,68,0.3); }
-.btn-switch { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 12px 24px; }
-.btn-switch:hover { box-shadow: 0 6px 20px rgba(99,102,241,0.3); }
-.btn-scan { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 12px 24px; margin-top: 15px; }
-.btn-scan:hover { box-shadow: 0 6px 20px rgba(99,102,241,0.3); }
-
-.scanner-status {
-    margin-top: 15px; padding: 10px; border-radius: 8px;
-    background: #f1f5f9; font-size: 14px;
-}
-.scanner-result {
-    background: white; padding: 20px; border-radius: 12px;
-    margin-top: 20px; border: 2px solid #e2e8f0; text-align: left;
-}
-.scanner-success {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white; padding: 15px; border-radius: 12px; margin-bottom: 20px;
-    display: flex; align-items: center; gap: 10px; font-weight: 600;
-}
-.scanner-error {
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-    color: white; padding: 15px; border-radius: 12px; margin-bottom: 20px;
-    display: flex; align-items: center; gap: 10px; font-weight: 600;
-}
-.captured-image {
-    max-width: 300px; margin: 20px auto; display: none;
-    border: 2px solid #e2e8f0; border-radius: 8px;
-}
-
-/* Disabled Elements */
-.btn-disabled {
-    background: #cbd5e1 !important; color: #64748b !important;
-    cursor: not-allowed !important; opacity: 0.6;
-}
-
-/* Hidden Elements */
-#qr-canvas { display: none; }
-
-/* Utility Classes */
-.debug-info {
-    background: #fef3c7; padding: 10px; border-radius: 5px;
-    margin: 10px 0; font-family: monospace; font-size: 12px;
-}
-
-/* Archives Table Styles */
-.archive-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 20px;
-}
-
-.archive-table th {
-    background-color: #f8fafc;
-    padding: 12px 15px;
-    text-align: left;
-    font-weight: 600;
-    color: #475569;
-    border-bottom: 2px solid #e2e8f0;
-}
-
-.archive-table td {
-    padding: 12px 15px;
-    border-bottom: 1px solid #e2e8f0;
-    color: #475569;
-}
-
-.archive-table tr:hover {
-    background-color: #f8fafc;
-}
-
-.archive-table .actions-cell {
-    text-align: center;
-    min-width: 120px;
-}
-
-.archive-actions {
-    display: flex;
-    gap: 8px;
-    justify-content: center;
-}
-
-.archive-empty-state {
-    text-align: center;
-    padding: 40px 20px;
-    color: #64748b;
-    background: #f8fafc;
-    border-radius: 12px;
-    margin: 20px 0;
-}
-
-.archive-empty-state i {
-    font-size: 48px;
-    color: #cbd5e1;
-    margin-bottom: 15px;
-}
-
-.archive-empty-state h3 {
-    font-size: 18px;
-    font-weight: 600;
-    margin-bottom: 10px;
-}
-
-.archive-empty-state p {
-    font-size: 14px;
-    margin-bottom: 20px;
-}
-    '))
+   # External CSS files
+  tags$link(rel = "stylesheet", type = "text/css", href = "css/login.css"),
+  tags$link(rel = "stylesheet", type = "text/css", href = "css/main.css"),
+  tags$link(rel = "stylesheet", type = "text/css", href = "css/qr-scanner.css"),
+  tags$link(rel = "stylesheet", type = "text/css", href = "css/modal.css"),
+  
+  # External JavaScript files
+  tags$script(src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"),
+  tags$script(src = "js/qr-scanner.js")
   ),
   
-  # Login Page (Initially shown)
+  # Login Page 
   div(id = "login_page", class = "login-container",
       div(class = "login-card",
           div(class = "login-header",
@@ -1039,7 +258,7 @@ ui <- fluidPage(
       )
   ),
   
-  # Main App (Initially hidden)
+  # Main App 
   div(id = "main_app", class = "main-app",
       # Top Navigation Bar
       div(class = "top-nav",
@@ -1354,13 +573,13 @@ server <- function(input, output, session) {
     user_info = NULL
   )
   
-  # Show login page, hide main app on startup
+  # Show login page
   observe({
     shinyjs::show("login_page")
     shinyjs::hide("main_app")
   })
   
-  # Login validation function - UPDATED for SQLite
+  # Login validation function
   validate_login <- function(username, password) {
     if(is.null(pool)) {
       return(list(success = FALSE, message = "Database connection error"))
@@ -1564,7 +783,7 @@ server <- function(input, output, session) {
     showNotification(safe_message, type = type, duration = duration)
   }
   
-  # Initialize with Dashboard visible (after login)
+  # Initialize with Dashboard visible 
   shinyjs::show("section_dashboard")
   shinyjs::hide("section_classes")
   shinyjs::hide("section_bookings")
@@ -2170,7 +1389,7 @@ server <- function(input, output, session) {
   bookings_data <- reactiveVal(data.frame())
   archived_classes_data <- reactiveVal(data.frame())
   
-  # Function to fetch classes with accurate slot calculation - UPDATED for SQLite
+  # Function to fetch classes with accurate slot calculation 
   fetch_classes <- function() {
     if(!user_auth$logged_in) return()
     
@@ -2183,7 +1402,6 @@ server <- function(input, output, session) {
     }
     
     tryCatch({
-      # SQLite compatible query
       query <- "
         SELECT 
           c.*,
@@ -2235,7 +1453,7 @@ server <- function(input, output, session) {
     })
   }
   
-  # Function to fetch bookings - UPDATED for SQLite
+  # Function to fetch bookings 
   fetch_bookings <- function() {
     if(!user_auth$logged_in) return()
     
@@ -2245,7 +1463,6 @@ server <- function(input, output, session) {
     }
     
     tryCatch({
-      # SQLite compatible query
       query <- "
       SELECT b.*, c.title as class_title, c.date as class_date, 
              c.time as class_time, c.price as class_price
@@ -2256,7 +1473,7 @@ server <- function(input, output, session) {
     "
       data <- dbGetQuery(pool, query)
       
-      # Debug: Check what status values we're getting
+      # Check what status values getting
       if(nrow(data) > 0) {
         cat("Fetched", nrow(data), "bookings. Status values:", paste(unique(data$status), collapse=", "), "\n")
       }
@@ -2269,7 +1486,7 @@ server <- function(input, output, session) {
     })
   }
   
-  # Function to check and archive old classes daily - UPDATED for SQLite
+  # Function to check and archive old classes daily
   check_and_archive_classes <- function() {
     if(!user_auth$logged_in) return()
     
@@ -2327,7 +1544,7 @@ server <- function(input, output, session) {
     })
   }
   
-  # Function to fetch archived classes - UPDATED for SQLite
+  # Function to fetch archived classes 
   fetch_archived_classes <- function() {
     if(!user_auth$logged_in) return()
     
@@ -2340,7 +1557,6 @@ server <- function(input, output, session) {
     }
     
     tryCatch({
-      # SQLite compatible query
       query <- "
         SELECT 
           c.*,
@@ -2824,7 +2040,7 @@ server <- function(input, output, session) {
                       choices = class_choices)
   }
   
-  # Filter bookings by selected class - FIXED VERSION
+  # Filter bookings by selected class 
   filtered_bookings_data <- reactive({
     data <- bookings_data()
     
@@ -3096,46 +2312,140 @@ server <- function(input, output, session) {
     # Calculate actual booked slots
     booked_slots <- sum(bookings %>% filter(status == "Booked") %>% pull(slots_booked), na.rm = TRUE)
     
+    # Parse time for better display
+    time_display <- tryCatch({
+      time_val <- class_data$time
+      if(grepl(":", time_val)) {
+        time_parts <- strsplit(time_val, ":")[[1]]
+        hour <- as.numeric(time_parts[1])
+        minute <- time_parts[2]
+        am_pm <- ifelse(hour < 12, "AM", "PM")
+        hour12 <- ifelse(hour == 0, 12, ifelse(hour > 12, hour - 12, hour))
+        paste0(hour12, ":", minute, " ", am_pm)
+      } else {
+        time_val
+      }
+    }, error = function(e) {
+      class_data$time
+    })
+    
+    # Calculate progress percentage
+    progress_percent <- ifelse(class_data$total_slots > 0, 
+                               round((booked_slots / class_data$total_slots) * 100), 0)
+    
     showModal(modalDialog(
-      title = paste("Class Details:", class_data$title),
+      title = div(icon("info-circle"), "Class Details"),
       size = "l",
       easyClose = TRUE,
       footer = modalButton("Close"),
       
-      div(
-        h4("Class Information"),
-        tableOutput("classDetailTable"),
-        
-        h4("Bookings"),
-        if(nrow(bookings) > 0) {
-          tagList(
-            p(strong("Total Booked Slots:"), booked_slots),
-            DTOutput("classBookingsTable")
-          )
-        } else {
-          p("No bookings for this class yet.")
-        }
+      div(class = "class-details-container",
+          # Header with basic info
+          div(class = "class-header",
+              div(class = "class-title-section",
+                  h3(class = "class-detail-title", class_data$title),
+                  div(class = "class-status-badge",
+                      span(class = paste("status-badge", 
+                                         ifelse(class_data$status == "Available", "status-available",
+                                                ifelse(class_data$status == "Few Slots", "status-few",
+                                                       "status-full"))),
+                           class_data$status)
+                  )
+              ),
+              div(class = "class-instructor",
+                  icon("user-tie"),
+                  span("Instructor: ", strong(class_data$instructor))
+              )
+          ),
+          
+          # Main class info in grid
+          div(class = "class-info-grid",
+              div(class = "class-info-card",
+                  icon("calendar", class = "info-icon"),
+                  div(class = "info-content",
+                      span(class = "info-label", "Date"),
+                      span(class = "info-value", as.character(class_data$date))
+                  )
+              ),
+              div(class = "class-info-card",
+                  icon("clock", class = "info-icon"),
+                  div(class = "info-content",
+                      span(class = "info-label", "Time"),
+                      span(class = "info-value", time_display)
+                  )
+              ),
+              div(class = "class-info-card",
+                  icon("hourglass", class = "info-icon"),
+                  div(class = "info-content",
+                      span(class = "info-label", "Duration"),
+                      span(class = "info-value", paste(class_data$duration, "minutes"))
+                  )
+              ),
+              div(class = "class-info-card",
+                  icon("money-bill", class = "info-icon"),
+                  div(class = "info-content",
+                      span(class = "info-label", "Price per Slot"),
+                      span(class = "info-value", paste0("₱", class_data$price))
+                  )
+              )
+          ),
+          
+          # Description section
+          if(!is.na(class_data$description) && class_data$description != "" && 
+             class_data$description != "No description") {
+            div(class = "description-section",
+                h4(icon("file-alt"), "Description"),
+                div(class = "description-content",
+                    p(class_data$description)
+                )
+            )
+          },
+          
+          # Slots information
+          div(class = "slots-section",
+              h4(icon("user-group"), "Slots Information"),
+              div(class = "slots-grid",
+                  div(class = "slots-card",
+                      span(class = "slots-label", "Total Slots"),
+                      span(class = "slots-value", class_data$total_slots)
+                  ),
+                  div(class = "slots-card",
+                      span(class = "slots-label", "Booked Slots"),
+                      span(class = "slots-value", booked_slots)
+                  ),
+                  div(class = "slots-card",
+                      span(class = "slots-label", "Available Slots"),
+                      span(class = "slots-value", class_data$slots_remaining)
+                  ),
+                  div(class = "slots-card",
+                      span(class = "slots-label", "Fill Rate"),
+                      span(class = "slots-value", paste0(progress_percent, "%"))
+                  )
+              ),
+              div(class = "progress-bar-container",
+                  div(class = "progress-bar",
+                      style = paste0("width: ", progress_percent, "%;"),
+                      div(class = "progress-fill")
+                  )
+              )
+          ),
+          
+          # Bookings table
+          if(nrow(bookings) > 0) {
+            div(class = "bookings-section",
+                h4(icon("calendar-check"), "Bookings (", nrow(bookings), ")"),
+                div(class = "bookings-table-container",
+                    DTOutput("classBookingsTable")
+                )
+            )
+          } else {
+            div(class = "no-bookings",
+                icon("calendar-times"),
+                span("No bookings for this class yet.")
+            )
+          }
       )
     ))
-    
-    output$classDetailTable <- renderTable({
-      data.frame(
-        Field = c("Title", "Instructor", "Date", "Time", "Duration", 
-                  "Price per Slot", "Total Slots", "Available Slots", "Booked Slots", "Status"),
-        Value = c(
-          class_data$title,
-          class_data$instructor,
-          as.character(class_data$date),
-          as.character(class_data$time),
-          paste(class_data$duration, "minutes"),
-          paste0("₱", class_data$price),
-          class_data$total_slots,
-          class_data$slots_remaining,
-          booked_slots,
-          class_data$status
-        )
-      )
-    })
     
     output$classBookingsTable <- renderDT({
       display_bookings <- bookings %>%
@@ -3150,11 +2460,29 @@ server <- function(input, output, session) {
         )
       
       datatable(
-        display_bookings %>% select(Customer = customer_name, "Customer Type" = customer_type, 
-                                    Contact = contact, "Booked Slots" = slots_booked, 
-                                    Status = Status, "Booking Date" = Date),
-        options = list(pageLength = 5),
-        escape = FALSE
+        display_bookings %>% select(Customer = customer_name, 
+                                    "Customer Type" = customer_type, 
+                                    Contact = contact, 
+                                    "Booked Slots" = slots_booked, 
+                                    Status = Status, 
+                                    "Booking Date" = Date),
+        options = list(
+          pageLength = 5,
+          dom = 't',
+          searching = FALSE,
+          info = FALSE,
+          paging = FALSE,
+          autoWidth = TRUE,
+          columnDefs = list(
+            list(width = '150px', targets = c(0, 1, 2)),
+            list(width = '100px', targets = c(3, 4)),
+            list(width = '180px', targets = 5)
+          )
+        ),
+        escape = FALSE,
+        rownames = FALSE,
+        selection = 'none',
+        class = 'compact'
       )
     })
   })
@@ -3184,29 +2512,102 @@ server <- function(input, output, session) {
     
     # Show edit modal with current values
     showModal(modalDialog(
-      title = paste("Edit Class:", class_data$title),
+      title = div(icon("edit"), "Edit Class"),
       size = "l",
+      easyClose = FALSE,
       footer = tagList(
         modalButton("Cancel"),
         actionButton("updateClass", "Update Class", 
                      class = "btn-primary", icon = icon("save"))
       ),
-      div(
-        textInput("editClassTitle", "Class Title *", value = class_data$title),
-        textInput("editClassInstructor", "Instructor *", value = class_data$instructor),
-        textAreaInput("editClassDescription", "Description", rows = 3, 
-                      value = ifelse(is.na(class_data$description) || class_data$description == "", 
-                                     "No description", class_data$description)),
-        dateInput("editClassDate", "Date *", value = as.Date(class_data$date)),
-        textInput("editClassTime", "Time * (24h format)", 
-                  value = ifelse(grepl(":", class_data$time), 
-                                 substr(class_data$time, 1, 5), class_data$time)),
-        numericInput("editClassDuration", "Duration (minutes) *", 
-                     value = class_data$duration, min = 30, max = 180),
-        numericInput("editClassSlots", "Total Slots *", 
-                     value = class_data$total_slots, min = 1, max = 100),
-        numericInput("editClassPrice", "Price per Slot (₱) *", 
-                     value = class_data$price, min = 100, max = 5000, step = 50)
+      div(class = "modal-form-container",
+          div(class = "modal-form-row",
+              div(class = "modal-form-group",
+                  tags$label("Class Title", class = "modal-form-label required-field", `for` = "editClassTitle"),
+                  tags$input(
+                    id = "editClassTitle",
+                    type = "text",
+                    class = "modal-form-control",
+                    value = class_data$title
+                  )
+              ),
+              div(class = "modal-form-group",
+                  tags$label("Instructor", class = "modal-form-label required-field", `for` = "editClassInstructor"),
+                  tags$input(
+                    id = "editClassInstructor",
+                    type = "text",
+                    class = "modal-form-control",
+                    value = class_data$instructor
+                  )
+              )
+          ),
+          
+          div(class = "modal-form-row",
+              div(class = "modal-form-group",
+                  tags$label("Date", class = "modal-form-label required-field"),
+                  dateInput("editClassDate", NULL, value = as.Date(class_data$date), width = "100%")
+              ),
+              div(class = "modal-form-group",
+                  tags$label("Time (24h format)", class = "modal-form-label required-field", `for` = "editClassTime"),
+                  tags$input(
+                    id = "editClassTime",
+                    type = "text",
+                    class = "modal-form-control",
+                    value = ifelse(grepl(":", class_data$time), 
+                                   substr(class_data$time, 1, 5), class_data$time)
+                  )
+              )
+          ),
+          
+          div(class = "modal-form-row",
+              div(class = "modal-form-group",
+                  tags$label("Duration (minutes)", class = "modal-form-label required-field", `for` = "editClassDuration"),
+                  tags$input(
+                    id = "editClassDuration",
+                    type = "number",
+                    class = "modal-form-control",
+                    value = class_data$duration,
+                    min = "30",
+                    max = "180"
+                  )
+              ),
+              div(class = "modal-form-group",
+                  tags$label("Total Slots", class = "modal-form-label required-field", `for` = "editClassSlots"),
+                  tags$input(
+                    id = "editClassSlots",
+                    type = "number",
+                    class = "modal-form-control",
+                    value = class_data$total_slots,
+                    min = "1",
+                    max = "100"
+                  )
+              )
+          ),
+          
+          div(class = "modal-form-row",
+              div(class = "modal-form-group",
+                  tags$label("Price per Slot (₱)", class = "modal-form-label required-field", `for` = "editClassPrice"),
+                  tags$input(
+                    id = "editClassPrice",
+                    type = "number",
+                    class = "modal-form-control",
+                    value = class_data$price,
+                    min = "100",
+                    max = "5000",
+                    step = "50"
+                  )
+              ),
+              div(class = "modal-form-group",
+                  tags$label("Description", class = "modal-form-label", `for` = "editClassDescription"),
+                  tags$textarea(
+                    id = "editClassDescription",
+                    class = "modal-form-control textarea",
+                    rows = "3",
+                    value = ifelse(is.na(class_data$description) || class_data$description == "", 
+                                   "No description", class_data$description)
+                  )
+              )
+          )
       )
     ))
     
@@ -3349,34 +2750,232 @@ server <- function(input, output, session) {
     )
     
     showModal(modalDialog(
-      title = "Edit Booking",
-      size = "m",
+      title = div(icon("edit"), "Edit Booking"),
+      size = "l",
+      easyClose = FALSE,
       footer = tagList(
         modalButton("Cancel"),
         actionButton("updateBooking", "Update Booking", 
                      class = "btn-primary", icon = icon("save"))
       ),
-      div(
-        selectInput("editBookingClass", "Select Class *", 
-                    choices = class_choices,
-                    selected = booking_data$class_id),
-        radioButtons("editCustomerType", "Customer Type *",
-                     choices = c("Regular" = "Regular", 
-                                 "Member (₱50 discount)" = "Member"),
-                     selected = booking_data$customer_type),
-        textInput("editBookingCustomer", "Customer Name *", 
-                  value = booking_data$customer_name),
-        textInput("editBookingContact", "Contact Info", 
-                  value = booking_data$contact),
-        numericInput("editBookingSlots", "Number of Slots *", 
-                     value = booking_data$slots_booked, min = 1, max = 10)
+      div(class = "modal-form-container",
+          div(class = "modal-form-row",
+              div(class = "modal-form-group",
+                  tags$label("Select Class", class = "modal-form-label required-field"),
+                  selectInput("editBookingClass", NULL, 
+                              choices = class_choices,
+                              selected = booking_data$class_id,
+                              width = "100%")
+              ),
+              div(class = "modal-form-group",
+                  tags$label("Customer Type", class = "modal-form-label required-field"),
+                  radioButtons("editCustomerType", NULL,
+                               choices = c("Regular" = "Regular", 
+                                           "Member (₱50 discount)" = "Member"),
+                               selected = booking_data$customer_type,
+                               inline = TRUE)
+              )
+          ),
+          
+          div(class = "modal-form-row",
+              div(class = "modal-form-group",
+                  tags$label("Customer Name", class = "modal-form-label required-field", `for` = "editBookingCustomer"),
+                  tags$input(
+                    id = "editBookingCustomer",
+                    type = "text",
+                    class = "modal-form-control",
+                    value = booking_data$customer_name
+                  )
+              ),
+              div(class = "modal-form-group",
+                  tags$label("Contact Info", class = "modal-form-label", `for` = "editBookingContact"),
+                  tags$input(
+                    id = "editBookingContact",
+                    type = "text",
+                    class = "modal-form-control",
+                    value = booking_data$contact
+                  )
+              )
+          ),
+          
+          div(class = "modal-form-row",
+              div(class = "modal-form-group",
+                  tags$label("Number of Slots", class = "modal-form-label required-field", `for` = "editBookingSlots"),
+                  tags$input(
+                    id = "editBookingSlots",
+                    type = "number",
+                    class = "modal-form-control",
+                    value = booking_data$slots_booked,
+                    min = "1",
+                    max = "10"
+                  )
+              ),
+              div(class = "modal-form-group", 
+                  style = "align-self: flex-end;",
+                  actionButton("calculateEditPriceBtn", "Calculate Price", 
+                               class = "btn-view", icon = icon("calculator"))
+              )
+          ),
+          
+          # Price Calculation Display
+          div(id = "editPriceCalculationSection", class = "modal-form-row",
+              style = "min-height: 160px;",
+              uiOutput("editPriceCalculation", style = "width: 100%;")
+          )
       )
     ))
+    
+    # Initialize price calculation with current values
+    output$editPriceCalculation <- renderUI({
+      # Get selected class info
+      class_info <- classes_data() %>% 
+        filter(class_id == booking_data$class_id)
+      
+      if(nrow(class_info) > 0) {
+        price_per_slot <- class_info$price
+        discount <- ifelse(booking_data$customer_type == "Member", 50, 0)
+        final_price_per_slot <- price_per_slot - discount
+        total_price <- final_price_per_slot * booking_data$slots_booked
+        
+        div(class = "price-calculation-box",
+            h4("Price Calculation"),
+            tags$table(class = "price-table",
+                       tags$tr(
+                         tags$td(class = "item", "Price per slot:"),
+                         tags$td(class = "value", paste0("₱", price_per_slot))
+                       ),
+                       tags$tr(
+                         tags$td(class = "item", "Discount:"),
+                         tags$td(class = "value", ifelse(discount > 0, paste0("-₱", discount), "₱0"))
+                       ),
+                       tags$tr(
+                         tags$td(class = "item", "Final price per slot:"),
+                         tags$td(class = "value", paste0("₱", final_price_per_slot))
+                       ),
+                       tags$tr(
+                         tags$td(class = "item", "Number of slots:"),
+                         tags$td(class = "value", booking_data$slots_booked)
+                       ),
+                       tags$tr(
+                         tags$td(class = "item", "Total Amount:"),
+                         tags$td(class = "value", paste0("₱", total_price))
+                       )
+            )
+        )
+      } else {
+        div(class = "price-calculation-box",
+            h4("Price Calculation"),
+            p(style = "color: #64748b; text-align: center;", "Select a class to see pricing details")
+        )
+      }
+    })
     
     # Store booking_id in a reactive value for the update
     edit_booking_id(booking_id)
   }
+  # Edit Price Calculation Observer
+  observeEvent(input$calculateEditPriceBtn, {
+    if(!user_auth$logged_in) return()
+    
+    req(input$editBookingClass, input$editBookingSlots, input$editCustomerType)
+    
+    # Get selected class price
+    class_info <- classes_data() %>% 
+      filter(class_id == input$editBookingClass)
+    
+    if(nrow(class_info) == 0) {
+      output$editPriceCalculation <- renderUI({
+        div(class = "price-calculation-box",
+            h4("Price Calculation"),
+            p(style = "color: #ef4444;", "Class not found. Please select a class.")
+        )
+      })
+      return()
+    }
+    
+    price_per_slot <- class_info$price
+    discount <- ifelse(input$editCustomerType == "Member", 50, 0)
+    final_price_per_slot <- price_per_slot - discount
+    total_price <- final_price_per_slot * input$editBookingSlots
+    
+    output$editPriceCalculation <- renderUI({
+      div(class = "price-calculation-box",
+          h4("Price Calculation"),
+          tags$table(class = "price-table",
+                     tags$tr(
+                       tags$td(class = "item", "Price per slot:"),
+                       tags$td(class = "value", paste0("₱", price_per_slot))
+                     ),
+                     tags$tr(
+                       tags$td(class = "item", "Discount:"),
+                       tags$td(class = "value", ifelse(discount > 0, paste0("-₱", discount), "₱0"))
+                     ),
+                     tags$tr(
+                       tags$td(class = "item", "Final price per slot:"),
+                       tags$td(class = "value", paste0("₱", final_price_per_slot))
+                     ),
+                     tags$tr(
+                       tags$td(class = "item", "Number of slots:"),
+                       tags$td(class = "value", input$editBookingSlots)
+                     ),
+                     tags$tr(
+                       tags$td(class = "item", "Total Amount:"),
+                       tags$td(class = "value", paste0("₱", total_price))
+                     )
+          )
+      )
+    })
+  })
   
+  # Update edit price calculation when inputs change
+  observe({
+    # Recalculate when any relevant input changes
+    req(input$editBookingClass, input$editBookingSlots, input$editCustomerType)
+    
+    # Only recalculate if the button has been clicked at least once
+    if(!is.null(input$calculateEditPriceBtn) && input$calculateEditPriceBtn > 0) {
+      isolate({
+        # Get selected class price
+        class_info <- classes_data() %>% 
+          filter(class_id == input$editBookingClass)
+        
+        if(nrow(class_info) > 0) {
+          price_per_slot <- class_info$price
+          discount <- ifelse(input$editCustomerType == "Member", 50, 0)
+          final_price_per_slot <- price_per_slot - discount
+          total_price <- final_price_per_slot * input$editBookingSlots
+          
+          output$editPriceCalculation <- renderUI({
+            div(class = "price-calculation-box",
+                h4("Price Calculation"),
+                tags$table(class = "price-table",
+                           tags$tr(
+                             tags$td(class = "item", "Price per slot:"),
+                             tags$td(class = "value", paste0("₱", price_per_slot))
+                           ),
+                           tags$tr(
+                             tags$td(class = "item", "Discount:"),
+                             tags$td(class = "value", ifelse(discount > 0, paste0("-₱", discount), "₱0"))
+                           ),
+                           tags$tr(
+                             tags$td(class = "item", "Final price per slot:"),
+                             tags$td(class = "value", paste0("₱", final_price_per_slot))
+                           ),
+                           tags$tr(
+                             tags$td(class = "item", "Number of slots:"),
+                             tags$td(class = "value", input$editBookingSlots)
+                           ),
+                           tags$tr(
+                             tags$td(class = "item", "Total Amount:"),
+                             tags$td(class = "value", paste0("₱", total_price))
+                           )
+                )
+            )
+          })
+        }
+      })
+    }
+  })
   # Reactive value for editing booking
   edit_booking_id <- reactiveVal(NULL)
   
@@ -3442,22 +3041,100 @@ server <- function(input, output, session) {
     if(!user_auth$logged_in) return()
     
     showModal(modalDialog(
-      title = "Add New Dance Class",
+      title = div(icon("plus-circle"), "Add New Dance Class"),
       size = "l",
+      easyClose = FALSE,
       footer = tagList(
         modalButton("Cancel"),
         actionButton("saveClass", "Save Class", 
                      class = "btn-primary", icon = icon("save"))
       ),
-      div(
-        textInput("classTitle", "Class Title *", placeholder = "e.g., Hip Hop Beginner"),
-        textInput("classInstructor", "Instructor *", placeholder = "Instructor name"),
-        textAreaInput("classDescription", "Description", rows = 3, placeholder = "Class description..."),
-        dateInput("classDate", "Date *", min = Sys.Date()),
-        textInput("classTime", "Time * (24h format)", placeholder = "HH:MM"),
-        numericInput("classDuration", "Duration (minutes) *", value = 60, min = 30, max = 180),
-        numericInput("classSlots", "Total Slots *", value = 20, min = 1, max = 100),
-        numericInput("classPrice", "Price per Slot (₱) *", value = NULL, min = 100, max = 5000, step = 50)
+      div(class = "modal-form-container",
+          div(class = "modal-form-row",
+              div(class = "modal-form-group",
+                  tags$label("Class Title", class = "modal-form-label required-field", `for` = "classTitle"),
+                  tags$input(
+                    id = "classTitle",
+                    type = "text",
+                    class = "modal-form-control",
+                    placeholder = "e.g., Hip Hop Beginner"
+                  )
+              ),
+              div(class = "modal-form-group",
+                  tags$label("Instructor", class = "modal-form-label required-field", `for` = "classInstructor"),
+                  tags$input(
+                    id = "classInstructor",
+                    type = "text",
+                    class = "modal-form-control",
+                    placeholder = "Instructor name"
+                  )
+              )
+          ),
+          
+          div(class = "modal-form-row",
+              div(class = "modal-form-group",
+                  tags$label("Date", class = "modal-form-label required-field", `for` = "classDate"),
+                  dateInput("classDate", NULL, min = Sys.Date(), width = "100%")
+              ),
+              div(class = "modal-form-group",
+                  tags$label("Time (24h format)", class = "modal-form-label required-field", `for` = "classTime"),
+                  tags$input(
+                    id = "classTime",
+                    type = "text",
+                    class = "modal-form-control",
+                    placeholder = "HH:MM (e.g., 14:30)"
+                  )
+              )
+          ),
+          
+          div(class = "modal-form-row",
+              div(class = "modal-form-group",
+                  tags$label("Duration (minutes)", class = "modal-form-label required-field", `for` = "classDuration"),
+                  tags$input(
+                    id = "classDuration",
+                    type = "number",
+                    class = "modal-form-control",
+                    value = "60",
+                    min = "30",
+                    max = "180"
+                  )
+              ),
+              div(class = "modal-form-group",
+                  tags$label("Total Slots", class = "modal-form-label required-field", `for` = "classSlots"),
+                  tags$input(
+                    id = "classSlots",
+                    type = "number",
+                    class = "modal-form-control",
+                    value = "20",
+                    min = "1",
+                    max = "100"
+                  )
+              )
+          ),
+          
+          div(class = "modal-form-row",
+              div(class = "modal-form-group",
+                  tags$label("Price per Slot (₱)", class = "modal-form-label required-field", `for` = "classPrice"),
+                  tags$input(
+                    id = "classPrice",
+                    type = "number",
+                    class = "modal-form-control",
+                    min = "100",
+                    max = "5000",
+                    step = "50",
+                    placeholder = "e.g., 500"
+                  )
+              ),
+              div(class = "modal-form-group",
+                  tags$label("Description", class = "modal-form-label", `for` = "classDescription"),
+                  tags$textarea(
+                    id = "classDescription",
+                    class = "modal-form-control textarea",
+                    rows = "3",
+                    placeholder = "Describe this dance class..."
+                  )
+              )
+          )
       )
     ))
   })
@@ -3514,50 +3191,192 @@ server <- function(input, output, session) {
     )
     
     showModal(modalDialog(
-      title = "Add New Booking",
-      size = "m",
+      title = div(icon("calendar-plus"), "Add New Booking"),
+      size = "l",
+      easyClose = FALSE,
       footer = tagList(
         modalButton("Cancel"),
         actionButton("saveBooking", "Book Now", 
                      class = "btn-primary", icon = icon("check"))
       ),
-      div(
-        selectInput("bookingClass", "Select Class *", choices = class_choices),
-        radioButtons("customerType", "Customer Type *",
-                     choices = c("Regular" = "Regular", 
-                                 "Member (₱50 discount)" = "Member"),
-                     selected = "Regular"),
-        textInput("bookingCustomer", "Customer Name *", placeholder = "Full name"),
-        textInput("bookingContact", "Contact Info", placeholder = "Phone or email (optional)"),
-        numericInput("bookingSlots", "Number of Slots *", value = 1, min = 1, max = 10),
-        # Display price calculation
-        uiOutput("priceCalculation")
+      div(class = "modal-form-container",
+          div(class = "modal-form-row",
+              div(class = "modal-form-group",
+                  tags$label("Select Class", class = "modal-form-label required-field", `for` = "bookingClass"),
+                  selectInput("bookingClass", NULL, choices = class_choices, width = "100%")
+              ),
+              div(class = "modal-form-group",
+                  tags$label("Customer Type", class = "modal-form-label required-field"),
+                  radioButtons("customerType", NULL,
+                               choices = c("Regular" = "Regular", 
+                                           "Member (₱50 discount)" = "Member"),
+                               selected = "Regular",
+                               inline = TRUE)
+              )
+          ),
+          
+          div(class = "modal-form-row",
+              div(class = "modal-form-group",
+                  tags$label("Customer Name", class = "modal-form-label required-field", `for` = "bookingCustomer"),
+                  tags$input(
+                    id = "bookingCustomer",
+                    type = "text",
+                    class = "modal-form-control",
+                    placeholder = "Full name"
+                  )
+              ),
+              div(class = "modal-form-group",
+                  tags$label("Contact Info", class = "modal-form-label", `for` = "bookingContact"),
+                  tags$input(
+                    id = "bookingContact",
+                    type = "text",
+                    class = "modal-form-control",
+                    placeholder = "Phone or email (optional)"
+                  )
+              )
+          ),
+          
+          div(class = "modal-form-row",
+              div(class = "modal-form-group",
+                  tags$label("Number of Slots", class = "modal-form-label required-field", `for` = "bookingSlots"),
+                  tags$input(
+                    id = "bookingSlots",
+                    type = "number",
+                    class = "modal-form-control",
+                    value = "1",
+                    min = "1",
+                    max = "10"
+                  )
+              ),
+              div(class = "modal-form-group", 
+                  style = "align-self: flex-end;",
+                  actionButton("calculatePriceBtn", "Calculate Price", 
+                               class = "btn-view", icon = icon("calculator"))
+              )
+          ),
+          
+          # Price Calculation Display - Fixed height to prevent shifting
+          div(class = "modal-form-row",
+              style = "min-height: 160px;",  # Fixed height to prevent layout shifting
+              uiOutput("priceCalculation", style = "width: 100%;")
+          )
       )
     ))
+    
+    # Initialize empty price calculation
+    output$priceCalculation <- renderUI({
+      div(class = "price-calculation-box",
+          style = "min-height: 120px; display: flex; flex-direction: column; justify-content: center;",
+          h4("Price Calculation"),
+          p(style = "color: #64748b; text-align: center; margin: 0;", 
+            "Click 'Calculate Price' to see pricing details")
+      )
+    })
   })
   
   # Price Calculation for Booking Modal
-  output$priceCalculation <- renderUI({
-    if(!user_auth$logged_in) return(NULL)
+  # Price Calculation Observer
+  observeEvent(input$calculatePriceBtn, {
+    if(!user_auth$logged_in) return()
     
-    req(input$bookingClass, input$bookingSlots)
+    req(input$bookingClass, input$bookingSlots, input$customerType)
     
     # Get selected class price
     class_info <- classes_data() %>% 
       filter(class_id == input$bookingClass)
     
-    if(nrow(class_info) == 0) return(NULL)
+    if(nrow(class_info) == 0) {
+      output$priceCalculation <- renderUI({
+        div(class = "price-calculation-box",
+            h4("Price Calculation"),
+            p(style = "color: #ef4444;", "Class not found. Please select a class.")
+        )
+      })
+      return()
+    }
     
     price_per_slot <- class_info$price
     discount <- ifelse(input$customerType == "Member", 50, 0)
     final_price_per_slot <- price_per_slot - discount
     total_price <- final_price_per_slot * input$bookingSlots
     
-    div(
-      style = "background: #f8fafc; padding: 15px; border-radius: 10px; margin-top: 15px;",
-      h4("Price Calculation", style = "margin-top: 0;"),
-      tableOutput("priceDetails")
-    )
+    output$priceCalculation <- renderUI({
+      div(class = "price-calculation-box",
+          h4("Price Calculation"),
+          tags$table(class = "price-table",
+                     tags$tr(
+                       tags$td(class = "item", "Price per slot:"),
+                       tags$td(class = "value", paste0("₱", price_per_slot))
+                     ),
+                     tags$tr(
+                       tags$td(class = "item", "Discount:"),
+                       tags$td(class = "value", ifelse(discount > 0, paste0("-₱", discount), "₱0"))
+                     ),
+                     tags$tr(
+                       tags$td(class = "item", "Final price per slot:"),
+                       tags$td(class = "value", paste0("₱", final_price_per_slot))
+                     ),
+                     tags$tr(
+                       tags$td(class = "item", "Number of slots:"),
+                       tags$td(class = "value", input$bookingSlots)
+                     ),
+                     tags$tr(
+                       tags$td(class = "item", "Total Amount:"),
+                       tags$td(class = "value", paste0("₱", total_price))
+                     )
+          )
+      )
+    })
+  })
+  
+  # Update price calculation when inputs change
+  observe({
+    # Recalculate when any relevant input changes
+    req(input$bookingClass, input$bookingSlots, input$customerType)
+    
+    # Only recalculate if the button has been clicked at least once
+    if(!is.null(input$calculatePriceBtn) && input$calculatePriceBtn > 0) {
+      isolate({
+        # Get selected class price
+        class_info <- classes_data() %>% 
+          filter(class_id == input$bookingClass)
+        
+        if(nrow(class_info) > 0) {
+          price_per_slot <- class_info$price
+          discount <- ifelse(input$customerType == "Member", 50, 0)
+          final_price_per_slot <- price_per_slot - discount
+          total_price <- final_price_per_slot * input$bookingSlots
+          
+          output$priceCalculation <- renderUI({
+            div(class = "price-calculation-box",
+                h4("Price Calculation"),
+                tags$table(class = "price-table",
+                           tags$tr(
+                             tags$td(class = "item", "Price per slot:"),
+                             tags$td(class = "value", paste0("₱", price_per_slot))
+                           ),
+                           tags$tr(
+                             tags$td(class = "item", "Discount:"),
+                             tags$td(class = "value", ifelse(discount > 0, paste0("-₱", discount), "₱0"))
+                           ),
+                           tags$tr(
+                             tags$td(class = "item", "Final price per slot:"),
+                             tags$td(class = "value", paste0("₱", final_price_per_slot))
+                           ),
+                           tags$tr(
+                             tags$td(class = "item", "Number of slots:"),
+                             tags$td(class = "value", input$bookingSlots)
+                           ),
+                           tags$tr(
+                             tags$td(class = "item", "Total Amount:"),
+                             tags$td(class = "value", paste0("₱", total_price))
+                           )
+                )
+            )
+          })
+        }
+      })
+    }
   })
   
   output$priceDetails <- renderTable({
@@ -3588,7 +3407,7 @@ server <- function(input, output, session) {
     )
   })
   
-  # Save Class - UPDATED for SQLite
+  # Save Class
   observeEvent(input$saveClass, {
     if(!user_auth$logged_in) return()
     
@@ -3669,7 +3488,7 @@ server <- function(input, output, session) {
     })
   })
   
-  # Update Class - UPDATED for SQLite
+  # Update Class 
   observeEvent(input$updateClass, {
     if(!user_auth$logged_in) return()
     
@@ -3808,7 +3627,7 @@ server <- function(input, output, session) {
     })
   })
   
-  # Save Booking with QR Code Generation - UPDATED for SQLite
+  # Save Booking - QR Code Generation 
   observeEvent(input$saveBooking, {
     if(!user_auth$logged_in) return()
     
@@ -3858,15 +3677,15 @@ server <- function(input, output, session) {
       booking_ref <- paste0("ST-", format(Sys.time(), "%Y%m%d%H%M%S"), "-", 
                             sample(1000:9999, 1))
       
-      # Build SQL query - SQLite version
+      # Build SQL query 
       query <- sprintf(
         "INSERT INTO bookings (class_id, customer_name, contact, slots_booked, customer_type, booking_ref, archived) 
-        VALUES (%d, '%s', '%s', %d, '%s', '%s', 0)",
+      VALUES (%d, '%s', '%s', %d, '%s', '%s', 0)",
         as.integer(input$bookingClass),
         gsub("'", "''", customer_name),
         gsub("'", "''", contact),
         as.integer(input$bookingSlots),
-        input$customerType,
+        input$customerType,  # This should now work properly with radioButtons
         booking_ref
       )
       
@@ -3891,6 +3710,11 @@ server <- function(input, output, session) {
       
     }, error = function(e) {
       cat("Error saving booking:", e$message, "\n")
+      cat("Input values:\n")
+      cat("  bookingClass:", input$bookingClass, "\n")
+      cat("  customerType:", input$customerType, "\n")
+      cat("  bookingCustomer:", input$bookingCustomer, "\n")
+      cat("  bookingSlots:", input$bookingSlots, "\n")
       safe_notify(paste("Error adding booking:", toString(e$message)), "error", 5)
     })
   })
@@ -4139,7 +3963,7 @@ server <- function(input, output, session) {
                     total_amount, booking_ref)
   })
   
-  # Update Booking - UPDATED for SQLite
+  # Update Booking 
   observeEvent(input$updateBooking, {
     if(!user_auth$logged_in) return()
     
@@ -4227,7 +4051,7 @@ server <- function(input, output, session) {
     })
   })
   
-  # Confirm cancel booking - UPDATED for SQLite
+  # Confirm cancel booking
   observeEvent(input$confirmCancelBooking, {
     if(!user_auth$logged_in) return()
     
@@ -4416,7 +4240,7 @@ server <- function(input, output, session) {
       )
   })
   
-  # View archived class details - UPDATED (Fixed format error)
+  # View archived class details 
   observeEvent(input$view_archived_class, {
     if(!user_auth$logged_in) return()
     
@@ -4442,8 +4266,8 @@ server <- function(input, output, session) {
     bookings <- tryCatch({
       query <- sprintf(
         "SELECT * FROM bookings 
-         WHERE class_id = %d AND archived = 1
-         ORDER BY date_booked DESC",
+       WHERE class_id = %d AND archived = 1
+       ORDER BY date_booked DESC",
         as.integer(class_id)
       )
       dbGetQuery(pool, query)
@@ -4452,58 +4276,197 @@ server <- function(input, output, session) {
       data.frame()
     })
     
+    # Parse time for better display
+    time_display <- tryCatch({
+      time_val <- class_data$time
+      if(grepl(":", time_val)) {
+        time_parts <- strsplit(time_val, ":")[[1]]
+        hour <- as.numeric(time_parts[1])
+        minute <- time_parts[2]
+        am_pm <- ifelse(hour < 12, "AM", "PM")
+        hour12 <- ifelse(hour == 0, 12, ifelse(hour > 12, hour - 12, hour))
+        paste0(hour12, ":", minute, " ", am_pm)
+      } else {
+        time_val
+      }
+    }, error = function(e) {
+      class_data$time
+    })
+    
+    # Calculate statistics
+    total_slots <- class_data$total_slots
+    attended_slots <- class_data$attended_slots
+    cancelled_slots <- class_data$cancelled_slots
+    booked_slots <- nrow(bookings)
+    
+    # Calculate percentages
+    attendance_rate <- ifelse(total_slots > 0, round((attended_slots / total_slots) * 100, 1), 0)
+    cancellation_rate <- ifelse(total_slots > 0, round((cancelled_slots / total_slots) * 100, 1), 0)
+    
+    # Calculate total revenue
+    total_revenue <- round(
+      (class_data$price * attended_slots) - 
+        (50 * attended_slots * (class_data$price/100))  # Simple discount calculation
+    )
+    
     showModal(modalDialog(
-      title = paste("Archived Class Details:", class_data$title),
+      title = div(icon("archive"), "Archived Class Details"),
       size = "l",
       easyClose = TRUE,
       footer = modalButton("Close"),
       
-      div(
-        h4("Class Information"),
-        tableOutput("archivedClassDetailTable"),
-        
-        h4("Booked Customers"),
-        if(nrow(bookings) > 0) {
-          tagList(
-            p(strong("Total Bookings:"), nrow(bookings)),
-            p(strong("Attended Slots:"), class_data$attended_slots),
-            p(strong("Cancelled Slots:"), class_data$cancelled_slots),
-            DTOutput("archivedClassBookingsTable")
-          )
-        } else {
-          p("No bookings found for this archived class.")
-        }
+      div(class = "archived-class-details",
+          # Header with class info
+          div(class = "archived-header",
+              div(class = "archived-title-section",
+                  h3(class = "archived-title", class_data$title),
+                  div(class = "archived-badge",
+                      icon("archive"),
+                      span("Archived Class")
+                  )
+              ),
+              div(class = "archived-meta",
+                  div(class = "meta-item",
+                      icon("user-tie"),
+                      span("Instructor: ", strong(class_data$instructor))
+                  ),
+                  div(class = "meta-item",
+                      icon("calendar"),
+                      span("Date: ", strong(format(as.Date(class_data$date), "%B %d, %Y")))
+                  )
+              )
+          ),
+          
+          # Class details grid
+          div(class = "archived-info-grid",
+              div(class = "archived-info-card",
+                  div(class = "archived-icon", icon("clock")),
+                  div(class = "archived-content",
+                      span(class = "archived-label", "Class Time"),
+                      span(class = "archived-value", time_display)
+                  )
+              ),
+              div(class = "archived-info-card",
+                  div(class = "archived-icon", icon("hourglass")),
+                  div(class = "archived-content",
+                      span(class = "archived-label", "Duration"),
+                      span(class = "archived-value", paste(class_data$duration, "minutes"))
+                  )
+              ),
+              div(class = "archived-info-card",
+                  div(class = "archived-icon", icon("money-bill")),
+                  div(class = "archived-content",
+                      span(class = "archived-label", "Price per Slot"),
+                      span(class = "archived-value", paste0("₱", class_data$price))
+                  )
+              ),
+              div(class = "archived-info-card",
+                  div(class = "archived-icon", icon("users")),
+                  div(class = "archived-content",
+                      span(class = "archived-label", "Total Slots"),
+                      span(class = "archived-value", total_slots)
+                  )
+              )
+          ),
+          
+          # Description section
+          if(!is.na(class_data$description) && class_data$description != "" && 
+             class_data$description != "No description") {
+            div(class = "archived-description",
+                h4(icon("file-alt"), "Description"),
+                div(class = "archived-description-content",
+                    p(class_data$description)
+                )
+            )
+          },
+          
+          # Performance metrics
+          div(class = "archived-performance",
+              h4(icon("chart-bar"), "Class Performance"),
+              div(class = "performance-grid",
+                  div(class = "metric-card",
+                      div(class = "metric-icon", 
+                          style = "background: #d1fae5; color: #059669;",
+                          icon("check-circle")),
+                      div(class = "metric-content",
+                          span(class = "metric-label", "Attendance Rate"),
+                          span(class = "metric-value", paste0(attendance_rate, "%")),
+                          span(class = "metric-detail", paste(attended_slots, "slots attended"))
+                      )
+                  ),
+                  div(class = "metric-card",
+                      div(class = "metric-icon",
+                          style = "background: #fee2e2; color: #dc2626;",
+                          icon("times-circle")),
+                      div(class = "metric-content",
+                          span(class = "metric-label", "Cancellation Rate"),
+                          span(class = "metric-value", paste0(cancellation_rate, "%")),
+                          span(class = "metric-detail", paste(cancelled_slots, "slots cancelled"))
+                      )
+                  ),
+                  div(class = "metric-card",
+                      div(class = "metric-icon",
+                          style = "background: #dbeafe; color: #1d4ed8;",
+                          icon("calendar-check")),
+                      div(class = "metric-content",
+                          span(class = "metric-label", "Total Bookings"),
+                          span(class = "metric-value", booked_slots),
+                          span(class = "metric-detail", "customer reservations")
+                      )
+                  ),
+                  div(class = "metric-card",
+                      div(class = "metric-icon",
+                          style = "background: #fef3c7; color: #d97706;",
+                          icon("money-bill-wave")),
+                      div(class = "metric-content",
+                          span(class = "metric-label", "Total Revenue"),
+                          span(class = "metric-value", paste0("₱", format(total_revenue, big.mark = ","))),
+                          span(class = "metric-detail", "from attended slots")
+                      )
+                  )
+              )
+          ),
+          
+          # Attendance progress
+          div(class = "attendance-progress",
+              h4(icon("chart-line"), "Attendance Breakdown"),
+              div(class = "progress-stack",
+                  div(class = "progress-segment",
+                      style = paste0("flex: ", attended_slots, "; background: #10b981;"),
+                      div(class = "segment-label", "Attended"),
+                      div(class = "segment-value", paste0(attended_slots, " (", attendance_rate, "%)"))
+                  ),
+                  div(class = "progress-segment",
+                      style = paste0("flex: ", cancelled_slots, "; background: #ef4444;"),
+                      div(class = "segment-label", "Cancelled"),
+                      div(class = "segment-value", paste0(cancelled_slots, " (", cancellation_rate, "%)"))
+                  ),
+                  div(class = "progress-segment",
+                      style = paste0("flex: ", max(0, total_slots - attended_slots - cancelled_slots), 
+                                     "; background: #94a3b8;"),
+                      div(class = "segment-label", "No Show"),
+                      div(class = "segment-value", 
+                          paste0(max(0, total_slots - attended_slots - cancelled_slots), " slots"))
+                  )
+              )
+          ),
+          
+          # Bookings table
+          if(nrow(bookings) > 0) {
+            div(class = "archived-bookings",
+                h4(icon("list-alt"), "Customer Bookings (", nrow(bookings), ")"),
+                div(class = "bookings-table-wrapper",
+                    DTOutput("archivedClassBookingsTable")
+                )
+            )
+          } else {
+            div(class = "no-archived-bookings",
+                icon("calendar-times"),
+                span("No bookings found for this archived class.")
+            )
+          }
       )
     ))
-    
-    output$archivedClassDetailTable <- renderTable({
-      # Calculate total revenue correctly
-      total_revenue <- round(
-        (class_data$price * class_data$total_slots) - 
-          (50 * (class_data$total_slots - class_data$slots_remaining))
-      )
-      
-      # Format with comma separator
-      formatted_revenue <- formatC(total_revenue, format = "f", big.mark = ",", digits = 0)
-      
-      data.frame(
-        Field = c("Title", "Instructor", "Date", "Time", "Duration", 
-                  "Price per Slot", "Total Slots", "Attended Slots", 
-                  "Cancelled Slots", "Total Revenue"),
-        Value = c(
-          class_data$title,
-          class_data$instructor,
-          as.character(class_data$date),
-          format(strptime(class_data$time, "%H:%M:%S"), "%I:%M %p"),
-          paste(class_data$duration, "minutes"),
-          paste0("₱", class_data$price),
-          class_data$total_slots,
-          class_data$attended_slots,
-          class_data$cancelled_slots,
-          paste0("₱", formatted_revenue)  # Fixed this line
-        )
-      )
-    })
     
     output$archivedClassBookingsTable <- renderDT({
       display_bookings <- bookings %>%
@@ -4526,14 +4489,28 @@ server <- function(input, output, session) {
           Status = Status, 
           "Booking Date" = Date
         ),
-        options = list(pageLength = 5, searching = FALSE),
+        options = list(
+          pageLength = 5,
+          dom = 't',
+          searching = FALSE,
+          info = FALSE,
+          paging = FALSE,
+          autoWidth = TRUE,
+          columnDefs = list(
+            list(width = '150px', targets = c(0, 1, 2)),
+            list(width = '100px', targets = c(3, 4)),
+            list(width = '180px', targets = 5)
+          )
+        ),
         escape = FALSE,
-        rownames = FALSE
+        rownames = FALSE,
+        selection = 'none',
+        class = 'compact archived-table'
       )
     })
   })
   
-  # Delete archived class permanently - UPDATED for SQLite
+  # Delete archived class permanently 
   observeEvent(input$delete_archived_class, {
     if(!user_auth$logged_in) return()
     
